@@ -1,0 +1,1873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>MIDI MuRF Editor</title>
+  <style>
+    :root {
+      --bg: #1a1a1a;
+      --panel: #242424;
+      --panel-2: #2e2e2e;
+      --border: #3a3a3a;
+      --text: #e8e8e8;
+      --text-dim: #9a9a9a;
+      --accent: #c45c26;          /* Moog-ish orange */
+      --accent-dim: #8a3f1a;
+      --led-on: #e8a020;
+      --led-off: #3a3a3a;
+      --slider-track: #111;
+      --slider-fill: #c45c26;
+      --grid-off: #2a2a2a;
+      --grid-on: #c45c26;
+      --grid-header: #333;
+      --danger: #a33;
+      --success: #3a8a3a;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      overflow: hidden;
+      touch-action: manipulation;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--accent);
+    }
+    .midi-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-left: auto;
+      font-size: 12px;
+      color: var(--text-dim);
+    }
+    .led {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--led-off);
+      box-shadow: inset 0 0 2px #000;
+    }
+    .led.on { background: var(--led-on); box-shadow: 0 0 6px var(--led-on); }
+    .led.flash { background: #6fd36f; box-shadow: 0 0 10px #6fd36f; }
+
+    select, button, input[type="range"] {
+      font: inherit;
+      color: var(--text);
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 10px;
+    }
+    button {
+      cursor: pointer;
+      min-height: 36px;
+      min-width: 44px;
+    }
+    button:active { background: var(--accent-dim); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    button.primary:active { background: var(--accent-dim); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* Tabs */
+    .tabs {
+      display: flex;
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 12px 8px;
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: var(--text-dim);
+      font-weight: 500;
+      border-radius: 0;
+    }
+    .tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--bg);
+    }
+
+    /* Content */
+    main {
+      flex: 1;
+      overflow: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 12px;
+    }
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* Layout helpers */
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-start; }
+    .col { display: flex; flex-direction: column; gap: 8px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .panel h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-dim);
+      margin-bottom: 10px;
+    }
+
+    /* Knobs / controls */
+    .control {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      min-width: 72px;
+    }
+    .control label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-align: center;
+    }
+    .control .value, .control .value-input {
+      font-size: 11px;
+      color: var(--accent);
+      font-variant-numeric: tabular-nums;
+      width: 48px;
+      text-align: center;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 4px;
+    }
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 28px;
+      background: transparent;
+      padding: 0;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 6px;
+      background: var(--slider-track);
+      border-radius: 3px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--accent);
+      margin-top: -8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle {
+      width: 48px;
+      height: 28px;
+      border-radius: 14px;
+      background: var(--led-off);
+      position: relative;
+      border: none;
+      padding: 0;
+      min-width: 48px;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.15s;
+    }
+    .toggle.on::after { transform: translateX(20px); }
+
+    /* Pattern grid */
+    .pattern-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+      align-items: center;
+    }
+    .tgroup {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+    }
+    .tgroup.edit { background: #2a2622; border-color: #5a3d28; }
+    .tgroup.set { background: #22282a; border-color: #3d5558; }
+    .tgroup.fit { background: #24222a; border-color: #4a3d5a; }
+    .tgroup.zoom { background: #222; border-color: #444; }
+    .tgroup.clip { background: #22261f; border-color: #4a5530; }
+    .tgroup.files { background: #1f2428; border-color: #3a4a55; }
+    .tgroup.lib { background: #2a2320; border-color: #5a4030; }
+    .tgroup .tlabel {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--text-dim);
+      margin-right: 2px;
+    }
+    .grid-wrap {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+    }
+    .grid {
+      --cell: 22px;
+      display: grid;
+      grid-template-columns: 44px repeat(64, var(--cell));
+      gap: 2px;
+      padding: 6px;
+      width: max-content;
+    }
+    .grid-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      line-height: 1.15;
+      color: var(--text-dim);
+      background: var(--grid-header);
+      text-align: center;
+      padding: 2px;
+      white-space: pre-line;
+    }
+    .grid-label.band { cursor: pointer; }
+    .grid-label.band.selected { color: var(--accent); outline: 1px solid var(--accent); }
+    .cell {
+      width: var(--cell);
+      min-width: var(--cell);
+      height: 36px;
+      background: var(--grid-off);
+      border-radius: 3px;
+      cursor: pointer;
+    }
+    .grid-label { min-height: 22px; }
+    .cell.on { background: var(--grid-on); }
+    .cell.out { opacity: 0.25; } /* beyond band length */
+    .cell.cursor {
+      outline: 2px solid #e8c36a;
+      outline-offset: -2px;
+      z-index: 1;
+    }
+
+    .band-meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+    .band-meta label { font-size: 11px; color: var(--text-dim); }
+    .band-meta input[type="number"] {
+      width: 56px;
+      background: var(--panel-2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 4px 6px;
+    }
+
+    /* Keyboard */
+    .keyboard {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+      padding: 20px 8px;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .key {
+      flex: 1 1 0;
+      min-width: 56px;
+      max-width: none;
+      height: min(42vh, 280px);
+      background: linear-gradient(#f3e6d0, #d9c4a0);
+      color: #2a1a10;
+      border: 1px solid #333;
+      border-radius: 0 0 6px 6px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding-bottom: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      touch-action: none;
+    }
+    .key.black {
+      background: #222;
+      color: #eee;
+      height: 100px;
+      width: 40px;
+      margin: 0 -20px;
+      z-index: 1;
+      position: relative;
+    }
+    .key:active, .key.active { background: var(--accent); color: #fff; }
+
+    .mode-select {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+    }
+    .mode-select button.active { background: var(--accent); color: #fff; }
+
+    .status-bar {
+      padding: 6px 12px;
+      background: var(--panel);
+      border-top: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+
+    /* App shell */
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>MIDI MuRF Editor</h1>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button id="btnGlobalPatternReset" title="CC90 — reset pattern to step 1">Pattern Reset</button>
+        <button id="btnGlobalClockReset" title="Note 65 — restart / resync pattern clock">Clock Reset</button>
+        <button id="btnStopPattern" title="Stop pattern clock (Note 108)">Stop</button>
+      </div>
+      <div class="midi-status">
+        <span id="midiLabel">MIDI: disconnected</span>
+        <div class="led" id="midiLed"></div>
+        <select id="midiPort" style="max-width:160px">
+          <option value="">Select port…</option>
+        </select>
+        <button id="btnRefreshMidi" title="Refresh MIDI ports">↻</button>
+      </div>
+    </header>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="main">Main</button>
+      <button class="tab" data-tab="pattern">Pattern</button>
+      <button class="tab" data-tab="keyboard">Keyboard</button>
+    </div>
+
+    <main>
+      <!-- ========== MAIN TAB ========== -->
+      <div class="view active" id="view-main">
+        <div class="row" style="margin-bottom:12px">
+          <div class="panel" style="flex:1; min-width:200px">
+            <h2>Program / Voicing</h2>
+            <div class="row">
+              <div class="control" style="flex:1">
+                <label>Pattern (PC)</label>
+                <select id="pcPattern" style="width:100%">
+                  <!-- filled by JS: 1-24 -->
+                </select>
+              </div>
+              <div class="control">
+                <label>MIDI Ch</label>
+                <select id="midiChannel">
+                  <option value="1" selected>1</option>
+                  <option value="2">2</option>
+                  <option value="3">3</option>
+                  <option value="4">4</option>
+                  <option value="5">5</option>
+                  <option value="6">6</option>
+                  <option value="7">7</option>
+                  <option value="8">8</option>
+                  <option value="9">9</option>
+                  <option value="10">10</option>
+                  <option value="11">11</option>
+                  <option value="12">12</option>
+                  <option value="13">13</option>
+                  <option value="14">14</option>
+                  <option value="15">15</option>
+                  <option value="16">16</option>
+                </select>
+              </div>
+            </div>
+            <div class="toggle-row">
+              <span>Freq Bass / Mids</span>
+              <button class="toggle" id="togFreq" data-cc="86" title="CC86"></button>
+            </div>
+            <div class="toggle-row">
+              <span>LFO On/Off</span>
+              <button class="toggle" id="togLfo" data-cc="85" title="CC85"></button>
+            </div>
+            <div class="toggle-row">
+              <span>Bypass</span>
+              <button class="toggle" id="togBypass" data-cc="87" title="CC87"></button>
+            </div>
+            <div class="toggle-row">
+              <span>Staccato</span>
+              <button class="toggle" id="togStaccato" data-cc="68" title="CC68"></button>
+            </div>
+            <div class="toggle-row">
+              <span>Pattern Clock Sync</span>
+              <button class="toggle on" id="togClockSync" data-cc="89" title="CC89"></button>
+            </div>
+          </div>
+
+          <div class="panel" style="flex:2; min-width:260px">
+            <h2>Main Controls</h2>
+            <div class="row" style="gap:16px">
+              <div class="control" style="flex:1">
+                <label>Drive (CC2)</label>
+                <input type="range" min="0" max="127" value="64" data-cc="2" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="64" />
+              </div>
+              <div class="control" style="flex:1">
+                <label>Output (CC7)</label>
+                <input type="range" min="0" max="127" value="100" data-cc="7" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="100" />
+              </div>
+              <div class="control" style="flex:1">
+                <label>Mix (CC8)</label>
+                <input type="range" min="0" max="127" value="127" data-cc="8" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="127" />
+              </div>
+            </div>
+            <div class="row" style="gap:16px; margin-top:12px">
+              <div class="control" style="flex:1">
+                <label>Envelope (CC1)</label>
+                <input type="range" min="0" max="127" value="64" data-cc="1" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="64" />
+              </div>
+              <div class="control" style="flex:1">
+                <label>Env Scale (CC70)</label>
+                <input type="range" min="0" max="127" value="64" data-cc="70" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="64" />
+              </div>
+              <div class="control" style="flex:1">
+                <label>Rate (CC9)</label>
+                <input type="range" min="0" max="127" value="64" data-cc="9" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="64" />
+              </div>
+              <div class="control" style="flex:1">
+                <label>LFO/Sweep (CC3)</label>
+                <input type="range" min="0" max="127" value="64" data-cc="3" class="cc-slider" />
+                <input type="number" class="value-input" min="0" max="127" value="64" />
+              </div>
+            </div>
+            <div style="margin-top:12px">
+              <button id="btnPatternReset" class="primary">Pattern Reset (CC90)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Filter Levels (CC20–27) — stops pattern clock</h2>
+          <div class="row" id="filterLevels"></div>
+        </div>
+      </div>
+
+      <!-- ========== PATTERN TAB ========== -->
+      <div class="view" id="view-pattern">
+        <div class="pattern-toolbar">
+          <label>Slot
+            <select id="patternSlot"></select>
+          </label>
+          <label>LFO Rate
+            <input type="number" id="patternLfo" min="0" max="255" value="0" style="width:64px" />
+          </label>
+          <div class="tgroup edit">
+            <span class="tlabel">Edit</span>
+            <button id="btnSendPattern" class="primary">Send Pattern</button>
+            <button id="btnAutoSend">Auto Send: Off</button>
+            <button id="btnUndo">Undo</button>
+            <button id="btnRedo">Redo</button>
+            <button id="btnClearAll">Clear All</button>
+            <button id="btnInvert">Invert</button>
+            <button id="btnFlip">Flip Channels</button>
+          </div>
+          <div class="tgroup set">
+            <span class="tlabel">Set length</span>
+            <button id="btnSelectAllBands">All bands</button>
+            <button id="btnClearBandSel">Clear sel</button>
+            <button data-len="8">Set 8</button>
+            <button data-len="16">Set 16</button>
+            <button data-len="32">Set 32</button>
+            <button data-len="64">Set 64</button>
+          </div>
+          <div class="tgroup fit">
+            <span class="tlabel">Fit</span>
+            <button data-fit="8">8</button>
+            <button data-fit="16">16</button>
+            <button data-fit="24">24</button>
+            <button data-fit="32">32</button>
+            <button data-fit="40">40</button>
+            <button data-fit="48">48</button>
+            <button data-fit="56">56</button>
+            <button data-fit="64">64</button>
+          </div>
+          <div class="tgroup zoom">
+            <span class="tlabel">Zoom</span>
+            <button id="btnZoomOut">−</button>
+            <button id="btnZoomIn">+</button>
+          </div>
+        </div>
+
+        <div class="grid-wrap">
+          <div class="grid" id="patternGrid"></div>
+        </div>
+
+        <div class="band-meta" id="bandMeta"></div>
+
+        <div class="pattern-toolbar" style="margin-top:12px">
+          <div class="tgroup clip">
+            <span class="tlabel">Clipboard</span>
+            <button id="btnCopyPattern">Copy Pattern</button>
+            <button id="btnPastePattern">Paste Pattern</button>
+            <button id="btnCopyBand">Copy Band(s)</button>
+            <button id="btnPasteBand">Paste Band(s)</button>
+          </div>
+          <div class="tgroup files">
+            <span class="tlabel">Files</span>
+            <button id="btnExportSyx">Export Current .syx</button>
+            <button id="btnExportLibrary">Export Library Item</button>
+            <label class="primary" style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:4px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer">
+              Import .syx
+              <input type="file" id="importSyx" accept=".syx,*" multiple style="display:none" />
+            </label>
+          </div>
+          <div class="tgroup lib">
+            <span class="tlabel">Library</span>
+            <label>Search
+              <input type="search" id="librarySearch" placeholder="name…" style="width:110px" />
+            </label>
+            <label>Library
+              <select id="patternLibrary" style="max-width:240px">
+                <option value="">— imported patterns —</option>
+              </select>
+            </label>
+            <label>Send as
+              <select id="sendAsSlot"></select>
+            </label>
+            <button id="btnLoadLibrary">Load / Send</button>
+            <button id="btnSaveLibrary">Save Current to Library</button>
+            <button id="btnDeleteLibrary">Delete From Library</button>
+            <button id="btnDeleteAllLibrary">Delete All From Library</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== KEYBOARD TAB ========== -->
+      <div class="view" id="view-keyboard">
+        <div class="panel">
+          <h2>Performance Mode</h2>
+          <div class="mode-select">
+            <button class="active" data-mode="triggered">Triggered (C3–C4)</button>
+            <button data-mode="sustained">Sustained (C5–C6)</button>
+            <button data-mode="mute">Mute (C1–C2)</button>
+            <button data-mode="step">Step (Note 108)</button>
+          </div>
+          <p style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
+            Triggered / Sustained / Mute map the 8 white keys to Filters 1–8.
+            Step advances the pattern. Note 65 (F4) resets/restarts the pattern clock.
+          </p>
+          <div class="keyboard" id="keyboard"></div>
+          <div style="margin-top:12px">
+            <button id="btnNoteReset" class="primary">Pattern Clock Reset (Note 65)</button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <div class="status-bar" id="status">Ready</div>
+  </div>
+
+  <script>
+    // ============================================================
+    // MIDI MuRF Editor — Foundation
+    // ============================================================
+
+    const state = {
+      midiAccess: null,
+      output: null,
+      channel: 1, // 1-16
+      autoSend: false,
+      pattern: {
+        slot: 12,          // 1-24
+        lfo: 0,            // 0-255
+        // 8 bands, UI order (Band 1 top = 1.8kHz)
+        // each: { length: 1-64, steps: Set of 1-64 }
+        bands: Array.from({ length: 8 }, () => ({ length: 16, steps: new Set() }))
+      },
+      clipboard: null,
+      bandClipboard: null,
+      selectedBands: [0],
+      focusedStep: 1,
+      selectedSteps: [1],
+      visibleSteps: 64,
+      perfMode: 'triggered'
+    };
+
+    const SESSION_KEY = 'murf-session-v27';
+    const undoStack = [];
+    const redoStack = [];
+    let undoLock = false;
+
+    const BAND_FREQ_TOP_TO_BOTTOM = [
+      ['1.8 kHz', '3.4 kHz'],
+      ['1.2 kHz', '2.2 kHz'],
+      ['775 Hz', '1.5 kHz'],
+      ['525 Hz', '1 kHz'],
+      ['350 Hz', '675 Hz'],
+      ['240 Hz', '450 Hz'],
+      ['160 Hz', '300 Hz'],
+      ['110 Hz', '200 Hz']
+    ];
+
+    function snapshotPattern() {
+      return {
+        slot: state.pattern.slot,
+        lfo: state.pattern.lfo,
+        bands: state.pattern.bands.map(b => ({
+          length: b.length,
+          steps: Array.from(b.steps)
+        }))
+      };
+    }
+
+    function applySnapshot(snap) {
+      if (!snap) return;
+      state.pattern.slot = snap.slot;
+      state.pattern.lfo = snap.lfo;
+      state.pattern.bands = snap.bands.map(b => ({
+        length: b.length,
+        steps: new Set(b.steps)
+      }));
+      const slotEl = document.getElementById('patternSlot');
+      const lfoEl = document.getElementById('patternLfo');
+      if (slotEl) slotEl.value = snap.slot;
+      if (lfoEl) lfoEl.value = snap.lfo;
+    }
+
+    function pushUndo() {
+      if (undoLock) return;
+      undoStack.push(snapshotPattern());
+      if (undoStack.length > 60) undoStack.shift();
+      redoStack.length = 0;
+      persistSession();
+    }
+
+    function undo() {
+      if (!undoStack.length) return;
+      redoStack.push(snapshotPattern());
+      undoLock = true;
+      applySnapshot(undoStack.pop());
+      buildGrid();
+      undoLock = false;
+      persistSession();
+      setStatus('Undo');
+    }
+
+    function redo() {
+      if (!redoStack.length) return;
+      undoStack.push(snapshotPattern());
+      undoLock = true;
+      applySnapshot(redoStack.pop());
+      buildGrid();
+      undoLock = false;
+      persistSession();
+      setStatus('Redo');
+    }
+
+    function persistSession() {
+      try {
+        const portSel = document.getElementById('midiPort');
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+          channel: state.channel,
+          portId: portSel ? portSel.value : '',
+          visibleSteps: state.visibleSteps,
+          pattern: snapshotPattern()
+        }));
+      } catch (_) {}
+    }
+
+    function restoreSession() {
+      try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        return JSON.parse(raw);
+      } catch (_) {
+        return null;
+      }
+    }
+
+    // ---------- Utilities ----------
+    function setStatus(msg) {
+      document.getElementById('status').textContent = msg;
+    }
+
+    function midiChannelByte() {
+      return (state.channel - 1) & 0x0F;
+    }
+
+    // ---------- Web MIDI ----------
+    async function initMIDI() {
+      if (!navigator.requestMIDIAccess) {
+        setStatus('Web MIDI not available in this browser');
+        return;
+      }
+      try {
+        state.midiAccess = await navigator.requestMIDIAccess({ sysex: true });
+        state.midiAccess.onstatechange = refreshPorts;
+        refreshPorts();
+        setStatus('MIDI ready — select a port');
+      } catch (err) {
+        setStatus('MIDI access denied or failed: ' + err.message);
+      }
+    }
+
+    function refreshPorts() {
+      const sel = document.getElementById('midiPort');
+      const current = sel.value;
+      sel.innerHTML = '<option value="">Select port…</option>';
+      if (!state.midiAccess) return;
+      for (const out of state.midiAccess.outputs.values()) {
+        const opt = document.createElement('option');
+        opt.value = out.id;
+        opt.textContent = out.name;
+        sel.appendChild(opt);
+      }
+      if (current) sel.value = current;
+      updateMidiLed();
+    }
+
+    function selectPort(id) {
+      if (!state.midiAccess) return;
+      state.output = id ? state.midiAccess.outputs.get(id) : null;
+      updateMidiLed();
+      document.getElementById('midiLabel').textContent =
+        state.output ? 'MIDI: ' + state.output.name : 'MIDI: disconnected';
+      setStatus(state.output ? 'Connected: ' + state.output.name : 'No port selected');
+    }
+
+    function updateMidiLed() {
+      document.getElementById('midiLed').classList.toggle('on', !!state.output);
+    }
+
+    function flashMidi() {
+      const led = document.getElementById('midiLed');
+      if (!led) return;
+      led.classList.add('flash');
+      setTimeout(() => led.classList.remove('flash'), 120);
+    }
+
+    function sendCC(cc, value) {
+      if (!state.output) return;
+      const v = Math.max(0, Math.min(127, value | 0));
+      state.output.send([0xB0 | midiChannelByte(), cc & 0x7F, v]);
+      flashMidi();
+    }
+
+    function sendPC(program) {
+      if (!state.output) return;
+      // program 0-23 for patterns 1-24
+      state.output.send([0xC0 | midiChannelByte(), program & 0x7F]);
+      flashMidi();
+    }
+
+    function sendNoteOn(note, vel = 100) {
+      if (!state.output) return;
+      state.output.send([0x90 | midiChannelByte(), note & 0x7F, vel & 0x7F]);
+      flashMidi();
+    }
+
+    function sendNoteOff(note) {
+      if (!state.output) return;
+      state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
+    }
+
+    function sendSysex(bytes) {
+      if (!state.output) {
+        setStatus('No MIDI port selected');
+        return;
+      }
+      state.output.send(bytes);
+      flashMidi();
+      setStatus('SysEx sent (' + bytes.length + ' bytes)');
+    }
+
+    // ---------- SysEx Pattern Generator (proven format) ----------
+    function buildPatternSysex() {
+      // Header: 0081NN
+      const slot = state.pattern.slot; // 1-24
+      const nn = slot.toString(16).toUpperCase().padStart(2, '0');
+      let payload = '0081' + nn;
+
+      const lfoHex = state.pattern.lfo.toString(16).toUpperCase().padStart(2, '0');
+
+      // SysEx band order is reversed (UI Band 8 first)
+      for (let ui = 7; ui >= 0; ui--) {
+        const band = state.pattern.bands[ui];
+        const bytes = new Array(8).fill(0);
+        for (const step of band.steps) {
+          if (step >= 1 && step <= 64) {
+            const idx = step - 1;
+            bytes[Math.floor(idx / 8)] |= (1 << (idx % 8));
+          }
+        }
+        const hexSteps = bytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')).join('');
+        const data = hexSteps + '0'.repeat(12);
+        const ll = band.length.toString(16).toUpperCase().padStart(2, '0');
+        const field = data + ll + lfoHex;
+        if (field.length !== 32) throw new Error('Band field length ' + field.length);
+        payload += field;
+      }
+
+      if (payload.length !== 262) throw new Error('Payload length ' + payload.length);
+
+      // Convert ASCII payload to bytes and frame
+      const msg = [0xF0, 0x04, 0x0A, 0x05];
+      for (let i = 0; i < payload.length; i++) {
+        msg.push(payload.charCodeAt(i));
+      }
+      msg.push(0xF7);
+      return new Uint8Array(msg);
+    }
+
+    function sendCurrentPattern() {
+      try {
+        const syx = buildPatternSysex();
+        sendSysex(syx);
+      } catch (e) {
+        setStatus('SysEx build error: ' + e.message);
+      }
+    }
+
+    function maybeAutoSend() {
+      if (state.autoSend) sendCurrentPattern();
+    }
+
+    // ---------- Pattern Grid UI ----------
+    function buildGrid() {
+      const grid = document.getElementById('patternGrid');
+      grid.innerHTML = '';
+      const vis = state.visibleSteps || 64;
+      grid.style.gridTemplateColumns = `72px repeat(${vis}, var(--cell))`;
+
+      const corner = document.createElement('div');
+      corner.className = 'grid-label';
+      corner.textContent = 'B / Mids';
+      grid.appendChild(corner);
+      for (let s = 1; s <= vis; s++) {
+        const h = document.createElement('div');
+        h.className = 'grid-label';
+        h.textContent = (s === 1 || s % 8 === 0 || s === vis) ? String(s) : '';
+        grid.appendChild(h);
+      }
+
+      for (let b = 0; b < 8; b++) {
+        const label = document.createElement('div');
+        label.className = 'grid-label band' + (state.selectedBands.includes(b) ? ' selected' : '');
+        const freq = BAND_FREQ_TOP_TO_BOTTOM[b];
+        label.textContent = 'B' + (b + 1) + '\n' + freq[0] + '\n' + freq[1];
+        label.title = 'Bass ' + freq[0] + ' / Mids ' + freq[1] + ' — tap to select, tap again to add/remove';
+        label.addEventListener('click', () => {
+          const already = state.selectedBands.includes(b);
+          if (already) {
+            if (state.selectedBands.length > 1) {
+              state.selectedBands = state.selectedBands.filter(x => x !== b);
+            }
+          } else if (state.selectedBands.length <= 1) {
+            state.selectedBands = [b];
+          } else {
+            state.selectedBands.push(b);
+          }
+          buildGrid();
+        });
+        grid.appendChild(label);
+
+        for (let s = 1; s <= vis; s++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+          cell.dataset.band = b;
+          cell.dataset.step = s;
+          if (state.pattern.bands[b].steps.has(s)) cell.classList.add('on');
+          if (s > state.pattern.bands[b].length) cell.classList.add('out');
+          if (state.selectedSteps.includes(s) && state.selectedBands.includes(b)) cell.classList.add('cursor');
+          cell.addEventListener('pointerdown', onCellPointer);
+          grid.appendChild(cell);
+        }
+      }
+
+      buildBandMeta();
+    }
+
+    function buildBandMeta() {
+      const wrap = document.getElementById('bandMeta');
+      wrap.innerHTML = '';
+      for (let b = 0; b < 8; b++) {
+        const lab = document.createElement('label');
+        lab.textContent = 'B' + (b + 1) + ' len ';
+        const inp = document.createElement('input');
+        inp.type = 'number';
+        inp.min = 1;
+        inp.max = 64;
+        inp.value = state.pattern.bands[b].length;
+        inp.dataset.band = b;
+        inp.addEventListener('change', (e) => {
+          let v = parseInt(e.target.value, 10) || 1;
+          v = Math.max(1, Math.min(64, v));
+          state.pattern.bands[b].length = v;
+          e.target.value = v;
+          buildGrid();
+          maybeAutoSend();
+        });
+        lab.appendChild(inp);
+        wrap.appendChild(lab);
+      }
+    }
+
+    let paintMode = null; // true = turn on, false = turn off
+
+    function onCellPointer(e) {
+      e.preventDefault();
+      const band = parseInt(e.target.dataset.band, 10);
+      const step = parseInt(e.target.dataset.step, 10);
+      state.focusedStep = step;
+      if (e.shiftKey) {
+        if (state.selectedSteps.includes(step)) {
+          if (state.selectedSteps.length > 1) {
+            state.selectedSteps = state.selectedSteps.filter(s => s !== step);
+          }
+        } else {
+          state.selectedSteps.push(step);
+        }
+        if (!state.selectedBands.includes(band)) state.selectedBands.push(band);
+        buildGrid();
+        return;
+      }
+      if (!state.selectedBands.includes(band)) state.selectedBands = [band];
+      state.selectedSteps = [step];
+      pushUndo();
+      const steps = state.pattern.bands[band].steps;
+      paintMode = !steps.has(step);
+      toggleStep(band, step, paintMode);
+
+      const move = (ev) => {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        if (el && el.classList.contains('cell')) {
+          const b = parseInt(el.dataset.band, 10);
+          const s = parseInt(el.dataset.step, 10);
+          toggleStep(b, s, paintMode);
+        }
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        paintMode = null;
+        persistSession();
+        maybeAutoSend();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    function toggleStep(band, step, on) {
+      const steps = state.pattern.bands[band].steps;
+      if (on) steps.add(step);
+      else steps.delete(step);
+      const cell = document.querySelector(`.cell[data-band="${band}"][data-step="${step}"]`);
+      if (cell) cell.classList.toggle('on', on);
+    }
+
+    // ---------- Main tab controls ----------
+    function initMainControls() {
+      // Program change list
+      const pc = document.getElementById('pcPattern');
+      pc.innerHTML = '';
+      for (let i = 1; i <= 24; i++) {
+        const opt = document.createElement('option');
+        opt.value = i - 1; // PC 0-23
+        opt.textContent = 'Pattern ' + i + (i <= 12 ? ' (Bass)' : ' (Mids)');
+        pc.appendChild(opt);
+      }
+      pc.addEventListener('change', () => {
+        sendPC(parseInt(pc.value, 10));
+        setStatus('Program Change ' + (parseInt(pc.value, 10) + 1));
+      });
+
+      document.getElementById('midiChannel').addEventListener('change', (e) => {
+        state.channel = parseInt(e.target.value, 10);
+        // Also tell the MuRF via CC102
+        // CC102 is special: received on any channel, value 1-16 sets channel
+        if (state.output) {
+          state.output.send([0xB0, 102, state.channel]); // send on ch1 as vehicle
+        }
+        setStatus('MIDI channel set to ' + state.channel);
+      });
+
+      function bindSliderPair(sl, inp) {
+        if (!sl || !inp) return;
+        sl.addEventListener('input', () => {
+          inp.value = sl.value;
+          sendCC(parseInt(sl.dataset.cc, 10), parseInt(sl.value, 10));
+        });
+        const applyNum = () => {
+          let v = parseInt(inp.value, 10);
+          if (isNaN(v)) v = 0;
+          v = Math.max(0, Math.min(127, v));
+          inp.value = v;
+          sl.value = v;
+          sendCC(parseInt(sl.dataset.cc, 10), v);
+        };
+        inp.addEventListener('change', applyNum);
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); applyNum(); inp.blur(); }
+        });
+      }
+
+      document.querySelectorAll('.control').forEach(box => {
+        bindSliderPair(box.querySelector('.cc-slider'), box.querySelector('.value-input'));
+      });
+
+      // Filter levels CC20-27 with bass/mids frequencies
+      const FILTER_FREQ = [
+        ['110 Hz', '200 Hz'],
+        ['160 Hz', '300 Hz'],
+        ['240 Hz', '450 Hz'],
+        ['350 Hz', '675 Hz'],
+        ['525 Hz', '1 kHz'],
+        ['775 Hz', '1.5 kHz'],
+        ['1.2 kHz', '2.2 kHz'],
+        ['1.8 kHz', '3.4 kHz']
+      ];
+      const fl = document.getElementById('filterLevels');
+      for (let i = 0; i < 8; i++) {
+        const div = document.createElement('div');
+        div.className = 'control';
+        div.style.flex = '1';
+        div.innerHTML = `<label>B ${FILTER_FREQ[i][0]}<br>M ${FILTER_FREQ[i][1]}</label>
+          <input type="range" min="0" max="127" value="0" data-cc="${20 + i}" class="cc-slider" />
+          <input type="number" class="value-input" min="0" max="127" value="0" />`;
+        fl.appendChild(div);
+        bindSliderPair(div.querySelector('.cc-slider'), div.querySelector('.value-input'));
+      }
+
+      // Toggles
+      document.querySelectorAll('.toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          btn.classList.toggle('on');
+          const cc = parseInt(btn.dataset.cc, 10);
+          const on = btn.classList.contains('on');
+          sendCC(cc, on ? 127 : 0);
+          setStatus('CC' + cc + ' = ' + (on ? 'ON' : 'OFF'));
+        });
+      });
+
+      document.getElementById('btnPatternReset').addEventListener('click', () => {
+        sendCC(90, 127);
+        setStatus('Pattern Reset (CC90)');
+      });
+    }
+
+    // ---------- Pattern toolbar ----------
+    function initPatternToolbar() {
+      const slot = document.getElementById('patternSlot');
+      for (let i = 1; i <= 24; i++) {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = i + (i <= 12 ? ' Bass' : ' Mids');
+        if (i === 12) opt.selected = true;
+        slot.appendChild(opt);
+      }
+      slot.addEventListener('change', () => {
+        state.pattern.slot = parseInt(slot.value, 10);
+        maybeAutoSend();
+      });
+
+      document.getElementById('patternLfo').addEventListener('change', (e) => {
+        let v = parseInt(e.target.value, 10) || 0;
+        v = Math.max(0, Math.min(255, v));
+        state.pattern.lfo = v;
+        e.target.value = v;
+        maybeAutoSend();
+      });
+
+      document.getElementById('btnSendPattern').addEventListener('click', sendCurrentPattern);
+
+      document.getElementById('btnAutoSend').addEventListener('click', (e) => {
+        state.autoSend = !state.autoSend;
+        e.target.textContent = 'Auto Send: ' + (state.autoSend ? 'On' : 'Off');
+        e.target.classList.toggle('primary', state.autoSend);
+        if (state.autoSend) sendCurrentPattern();
+      });
+
+      document.getElementById('btnClearAll').addEventListener('click', () => {
+        pushUndo();
+        state.pattern.bands.forEach(b => b.steps.clear());
+        buildGrid();
+        persistSession();
+        maybeAutoSend();
+      });
+
+      document.getElementById('btnInvert').addEventListener('click', () => {
+        pushUndo();
+        state.pattern.bands.forEach(band => {
+          const next = new Set();
+          for (let s = 1; s <= band.length; s++) {
+            if (!band.steps.has(s)) next.add(s);
+          }
+          band.steps = next;
+        });
+        buildGrid();
+        maybeAutoSend();
+      });
+
+      document.getElementById('btnFlip').addEventListener('click', () => {
+        pushUndo();
+        state.pattern.bands.reverse();
+        buildGrid();
+        maybeAutoSend();
+      });
+
+      document.querySelectorAll('[data-len]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          pushUndo();
+          const len = parseInt(btn.dataset.len, 10);
+          const targets = state.selectedBands.length ? state.selectedBands : [0];
+          targets.forEach(i => { state.pattern.bands[i].length = len; });
+          buildGrid();
+          persistSession();
+          maybeAutoSend();
+        });
+      });
+
+      let gridZoom = 22;
+      function applyGridZoom() {
+        const grid = document.getElementById('patternGrid');
+        if (grid) grid.style.setProperty('--cell', gridZoom + 'px');
+      }
+      function fitVisibleSteps(n) {
+        state.visibleSteps = n;
+        buildGrid();
+        const wrap = document.querySelector('.grid-wrap');
+        const grid = document.getElementById('patternGrid');
+        if (!wrap || !grid) return;
+        const chrome = 72 + (n * 2) + 16;
+        const avail = wrap.clientWidth - chrome;
+        gridZoom = Math.max(8, Math.min(40, Math.floor(avail / n)));
+        applyGridZoom();
+        for (let i = 0; i < 24 && grid.scrollWidth > wrap.clientWidth && gridZoom > 8; i++) {
+          gridZoom -= 1;
+          applyGridZoom();
+        }
+        persistSession();
+      }
+      document.querySelectorAll('[data-fit]').forEach(btn => {
+        btn.addEventListener('click', () => fitVisibleSteps(parseInt(btn.dataset.fit, 10)));
+      });
+      document.getElementById('btnZoomOut').addEventListener('click', () => {
+        gridZoom = Math.max(8, gridZoom - 2);
+        applyGridZoom();
+      });
+      document.getElementById('btnZoomIn').addEventListener('click', () => {
+        gridZoom = Math.min(40, gridZoom + 2);
+        applyGridZoom();
+      });
+      window.addEventListener('resize', () => fitVisibleSteps(state.visibleSteps));
+      setTimeout(() => fitVisibleSteps(state.visibleSteps), 50);
+
+      document.getElementById('btnUndo').addEventListener('click', undo);
+      document.getElementById('btnRedo').addEventListener('click', redo);
+      document.getElementById('btnCopyBand').addEventListener('click', () => {
+        const src = state.selectedBands.length ? state.selectedBands : [0];
+        state.bandClipboard = src.map(i => ({
+          length: state.pattern.bands[i].length,
+          steps: Array.from(state.pattern.bands[i].steps)
+        }));
+        setStatus('Copied band(s) ' + src.map(i => i + 1).join(', '));
+      });
+      document.getElementById('btnPasteBand').addEventListener('click', () => {
+        if (!state.bandClipboard || !state.bandClipboard.length) { setStatus('No band copied'); return; }
+        pushUndo();
+        const dest = state.selectedBands.length ? state.selectedBands : [0];
+        dest.forEach((bandIndex, n) => {
+          const src = state.bandClipboard[n % state.bandClipboard.length];
+          state.pattern.bands[bandIndex] = {
+            length: src.length,
+            steps: new Set(src.steps)
+          };
+        });
+        buildGrid();
+        persistSession();
+        maybeAutoSend();
+        setStatus('Pasted onto band(s) ' + dest.map(i => i + 1).join(', '));
+      });
+      document.getElementById('btnSelectAllBands').addEventListener('click', () => {
+        state.selectedBands = [0,1,2,3,4,5,6,7];
+        buildGrid();
+      });
+      document.getElementById('btnClearBandSel').addEventListener('click', () => {
+        state.selectedBands = [0];
+        buildGrid();
+      });
+
+      document.getElementById('btnCopyPattern').addEventListener('click', () => {
+        state.clipboard = {
+          lfo: state.pattern.lfo,
+          bands: state.pattern.bands.map(b => ({
+            length: b.length,
+            steps: Array.from(b.steps)
+          }))
+        };
+        setStatus('Pattern copied');
+      });
+
+      document.getElementById('btnPastePattern').addEventListener('click', () => {
+        if (!state.clipboard) {
+          setStatus('Clipboard empty');
+          return;
+        }
+        state.pattern.lfo = state.clipboard.lfo;
+        document.getElementById('patternLfo').value = state.pattern.lfo;
+        state.pattern.bands = state.clipboard.bands.map(b => ({
+          length: b.length,
+          steps: new Set(b.steps)
+        }));
+        buildGrid();
+        maybeAutoSend();
+        setStatus('Pattern pasted');
+      });
+
+      document.getElementById('btnExportSyx').addEventListener('click', () => {
+        try {
+          const syx = buildPatternSysex();
+          const blob = new Blob([syx], { type: 'application/octet-stream' });
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'murf-pattern-' + state.pattern.slot + '.syx';
+          a.click();
+          URL.revokeObjectURL(a.href);
+          setStatus('Exported .syx');
+        } catch (e) {
+          setStatus('Export error: ' + e.message);
+        }
+      });
+
+      document.getElementById('importSyx').addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length) return;
+        let lastOk = 0;
+        for (const file of files) {
+        const buf = await file.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        // Very basic import: look for F0 04 0A 05 ... F7
+        let start = -1;
+        for (let i = 0; i < bytes.length - 5; i++) {
+          if (bytes[i] === 0xF0 && bytes[i + 1] === 0x04 && bytes[i + 2] === 0x0A && bytes[i + 3] === 0x05) {
+            start = i;
+            break;
+          }
+        }
+        if (start < 0) {
+          setStatus('No MuRF pattern SysEx found in ' + file.name);
+          continue;
+        }
+        let end = start + 4;
+        while (end < bytes.length && bytes[end] !== 0xF7) end++;
+        if (bytes[end] !== 0xF7) {
+          setStatus('Incomplete SysEx in ' + file.name);
+          continue;
+        }
+        const payloadBytes = bytes.slice(start + 4, end);
+        if (payloadBytes.length !== 262) {
+          setStatus('Unexpected payload length in ' + file.name + ': ' + payloadBytes.length);
+          continue;
+        }
+        const payload = String.fromCharCode(...payloadBytes);
+        const slotHex = payload.slice(4, 6);
+        const slot = parseInt(slotHex, 16) || 0;
+        const frame = bytes.slice(start, end + 1);
+        const name = file.name.replace(/\.(syx|txt)$/i, '') || ('pattern-' + slot);
+        saveLibraryDump(name, frame, slot);
+        lastOk++;
+        }
+        refreshLibrarySelect();
+        setStatus(lastOk ? ('Imported ' + lastOk + ' pattern(s) into library') : 'Import failed');
+        e.target.value = '';
+      });
+    }
+
+    // ---------- Keyboard / Performance ----------
+    const NOTE_MAPS = {
+      // Filter 1-8 white keys
+      mute:      [24, 26, 28, 29, 31, 33, 35, 36],      // C1-C2 area
+      triggered: [48, 50, 52, 53, 55, 57, 59, 60],  // C3-C4
+      sustained: [72, 74, 76, 77, 79, 81, 83, 84],  // C5-C6
+      step:      [108]
+    };
+
+    function initKeyboard() {
+      const kb = document.getElementById('keyboard');
+      // Mono stack for Sustained: last-note priority, release returns to previously held note
+      // Each entry: { note, pointerId }
+      let monoStack = [];
+      // Non-sustained: single active note + pointer for sliding
+      let slideNote = null;
+      let slidePointerId = null;
+      // Map pointerId -> note for mono multi-touch
+      const pointerNotes = new Map();
+
+      function soundingNote() {
+        return monoStack.length ? monoStack[monoStack.length - 1].note : null;
+      }
+
+      function refreshKeyVisuals() {
+        kb.querySelectorAll('.key').forEach(k => k.classList.remove('active'));
+        if (state.perfMode === 'sustained' || state.perfMode === 'triggered') {
+          monoStack.forEach(({ note }) => {
+            const el = kb.querySelector(`.key[data-note="${note}"]`);
+            if (el) el.classList.add('active');
+          });
+        } else if (slideNote !== null) {
+          const el = kb.querySelector(`.key[data-note="${slideNote}"]`);
+          if (el) el.classList.add('active');
+        }
+      }
+
+      function monoNoteOn(note, pointerId) {
+        monoStack = monoStack.filter(x => x.note !== note);
+        const prev = soundingNote();
+        monoStack.push({ note, pointerId });
+        pointerNotes.set(pointerId, note);
+        if (prev !== null && prev !== note) sendNoteOff(prev);
+        sendNoteOn(note, 100);
+        refreshKeyVisuals();
+      }
+
+      function monoNoteOffByPointer(pointerId) {
+        const note = pointerNotes.get(pointerId);
+        if (note === undefined) return;
+        pointerNotes.delete(pointerId);
+        const wasTop = soundingNote() === note;
+        monoStack = monoStack.filter(x => x.pointerId !== pointerId && x.note !== note);
+        if (wasTop) {
+          sendNoteOff(note);
+          const next = soundingNote();
+          if (next !== null) sendNoteOn(next, 100);
+        }
+        refreshKeyVisuals();
+      }
+
+      function monoAllOff() {
+        const top = soundingNote();
+        if (top !== null) sendNoteOff(top);
+        monoStack = [];
+        pointerNotes.clear();
+        refreshKeyVisuals();
+      }
+
+      function simpleNoteOn(note) {
+        if (slideNote === note) return;
+        if (slideNote !== null) sendNoteOff(slideNote);
+        slideNote = note;
+        sendNoteOn(note, 100);
+        refreshKeyVisuals();
+      }
+
+      function simpleNoteOff() {
+        if (slideNote !== null) {
+          sendNoteOff(slideNote);
+          slideNote = null;
+        }
+        refreshKeyVisuals();
+      }
+
+      function keyFromPoint(x, y) {
+        const el = document.elementFromPoint(x, y);
+        if (el && el.classList.contains('key') && kb.contains(el)) return el;
+        return null;
+      }
+
+      function renderKeys() {
+        monoAllOff();
+        simpleNoteOff();
+        slidePointerId = null;
+        kb.innerHTML = '';
+        const notes = NOTE_MAPS[state.perfMode] || NOTE_MAPS.triggered;
+        notes.forEach((note, i) => {
+          const key = document.createElement('div');
+          key.className = 'key';
+          key.textContent = state.perfMode === 'step' ? 'STEP' : ('F' + (i + 1));
+          key.dataset.note = note;
+          kb.appendChild(key);
+        });
+      }
+
+      const isMono = () => state.perfMode === 'sustained' || state.perfMode === 'triggered';
+
+      kb.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        const key = keyFromPoint(e.clientX, e.clientY);
+        if (!key) return;
+        const note = parseInt(key.dataset.note, 10);
+        if (isMono()) {
+          try { kb.setPointerCapture(e.pointerId); } catch (_) {}
+          monoNoteOn(note, e.pointerId);
+        } else {
+          if (slidePointerId !== null) return;
+          slidePointerId = e.pointerId;
+          try { kb.setPointerCapture(e.pointerId); } catch (_) {}
+          simpleNoteOn(note);
+        }
+      });
+
+      kb.addEventListener('pointermove', (e) => {
+        e.preventDefault();
+        const key = keyFromPoint(e.clientX, e.clientY);
+        if (!key) return;
+        const note = parseInt(key.dataset.note, 10);
+        if (isMono()) {
+          // If this pointer already owns a note and moved to a new key, retarget
+          if (pointerNotes.has(e.pointerId) && pointerNotes.get(e.pointerId) !== note) {
+            monoNoteOffByPointer(e.pointerId);
+            monoNoteOn(note, e.pointerId);
+          }
+        } else if (e.pointerId === slidePointerId) {
+          simpleNoteOn(note);
+        }
+      });
+
+      const endPointer = (e) => {
+        e.preventDefault();
+        if (isMono()) {
+          monoNoteOffByPointer(e.pointerId);
+        } else if (e.pointerId === slidePointerId) {
+          simpleNoteOff();
+          slidePointerId = null;
+        }
+        try { kb.releasePointerCapture(e.pointerId); } catch (_) {}
+      };
+      kb.addEventListener('pointerup', endPointer);
+      kb.addEventListener('pointercancel', endPointer);
+
+      document.querySelectorAll('[data-mode]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-mode]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          state.perfMode = btn.dataset.mode;
+          renderKeys();
+        });
+      });
+
+      document.getElementById('btnNoteReset').addEventListener('click', () => {
+        sendNoteOn(65, 100);
+        setTimeout(() => sendNoteOff(65), 50);
+        setStatus('Note 65 — Pattern clock reset');
+      });
+
+      renderKeys();
+    }
+
+    function initGlobalResets() {
+      document.getElementById('btnGlobalPatternReset').addEventListener('click', () => {
+        sendCC(90, 127);
+        setStatus('Pattern Reset (CC90)');
+      });
+      document.getElementById('btnGlobalClockReset').addEventListener('click', () => {
+        sendNoteOn(65, 100);
+        setTimeout(() => sendNoteOff(65), 50);
+        setStatus('Clock Reset (Note 65)');
+      });
+      document.getElementById('btnStopPattern').addEventListener('click', () => {
+        // Note 108 = Step mode: stops the free-running pattern clock
+        sendNoteOn(108, 100);
+        setTimeout(() => sendNoteOff(108), 50);
+        setStatus('Pattern clock stopped (Note 108)');
+      });
+    }
+
+    // Pattern library in this browser (localStorage).
+    // Name comes from the .syx filename. iCloud folder is the master archive.
+    const LIBRARY_KEY = 'murf-pattern-library';
+
+    function loadLibrary() {
+      try {
+        return JSON.parse(localStorage.getItem(LIBRARY_KEY) || '{}');
+      } catch (_) {
+        return {};
+      }
+    }
+
+    function writeLibrary(lib) {
+      localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib));
+    }
+
+    function saveLibraryDump(name, bytes, slot) {
+      const lib = loadLibrary();
+      let hex = '';
+      for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
+      lib[name] = { hex, slot: slot || state.pattern.slot };
+      writeLibrary(lib);
+    }
+
+    function hexToBytes(hex) {
+      const clean = String(hex).replace(/[^0-9a-fA-F]/g, '');
+      const out = new Uint8Array(clean.length / 2);
+      for (let i = 0; i < out.length; i++) out[i] = parseInt(clean.substr(i * 2, 2), 16);
+      return out;
+    }
+
+    function applyPayloadToGrid(payloadStr, slot) {
+      if (payloadStr.length < 262) return;
+      if (slot) {
+        state.pattern.slot = slot;
+        document.getElementById('patternSlot').value = slot;
+      }
+      const lfo = parseInt(payloadStr.slice(6 + 7 * 32 + 30, 6 + 7 * 32 + 32), 16) || 0;
+      state.pattern.lfo = lfo;
+      document.getElementById('patternLfo').value = lfo;
+      for (let i = 0; i < 8; i++) {
+        const field = payloadStr.slice(6 + i * 32, 6 + (i + 1) * 32);
+        const stepHex = field.slice(0, 16);
+        const len = parseInt(field.slice(28, 30), 16) || 16;
+        const bytesArr = [];
+        for (let j = 0; j < 16; j += 2) bytesArr.push(parseInt(stepHex.slice(j, j + 2), 16) || 0);
+        const steps = new Set();
+        for (let bi = 0; bi < 8; bi++) {
+          for (let bit = 0; bit < 8; bit++) {
+            if (bytesArr[bi] & (1 << bit)) steps.add(bi * 8 + bit + 1);
+          }
+        }
+        state.pattern.bands[7 - i] = { length: Math.max(1, Math.min(64, len)), steps };
+      }
+      buildGrid();
+    }
+
+    function refreshLibrarySelect() {
+      const sel = document.getElementById('patternLibrary');
+      if (!sel) return;
+      const current = sel.value;
+      const q = (document.getElementById('librarySearch')?.value || '').toLowerCase();
+      const lib = loadLibrary();
+      const names = Object.keys(lib).filter(name => {
+        if (!q) return true;
+        const slot = String(lib[name].slot || '');
+        return name.toLowerCase().includes(q) || slot.includes(q);
+      }).sort((a, b) => {
+        const sa = Number(lib[a].slot) || 99;
+        const sb = Number(lib[b].slot) || 99;
+        if (sa !== sb) return sa - sb;
+        return a.localeCompare(b);
+      });
+      sel.innerHTML = '<option value="">— imported patterns —</option>';
+      names.forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        const slot = lib[name].slot;
+        opt.textContent = (slot ? ('Slot ' + slot + ' — ') : '') + name;
+        sel.appendChild(opt);
+      });
+      if (current && lib[current]) sel.value = current;
+    }
+
+    function loadLibraryItem(name) {
+      const lib = loadLibrary();
+      const item = lib[name];
+      if (!item) {
+        setStatus('Not in library: ' + name);
+        return;
+      }
+      pushUndo();
+      const sendAs = parseInt(document.getElementById('sendAsSlot').value, 10) || item.slot || state.pattern.slot;
+      let bytes = hexToBytes(item.hex);
+      bytes = new Uint8Array(bytes);
+      if (bytes.length >= 10 && bytes[0] === 0xF0) {
+        const nn = sendAs.toString(16).toUpperCase().padStart(2, '0');
+        bytes[8] = nn.charCodeAt(0);
+        bytes[9] = nn.charCodeAt(1);
+      }
+      sendSysex(bytes);
+      if (bytes.length >= 6) {
+        let payload = '';
+        for (let i = 4; i < bytes.length - 1; i++) payload += String.fromCharCode(bytes[i]);
+        applyPayloadToGrid(payload, sendAs);
+      }
+      persistSession();
+      setStatus('Loaded & sent: ' + name + ' → slot ' + sendAs);
+    }
+
+    function initFactoryPresets() {
+      const sendAs = document.getElementById('sendAsSlot');
+      if (sendAs && !sendAs.options.length) {
+        for (let i = 1; i <= 24; i++) {
+          if (i === 1 || i === 13) continue;
+          const opt = document.createElement('option');
+          opt.value = i;
+          opt.textContent = i + (i <= 12 ? ' Bass' : ' Mids');
+          if (i === 12) opt.selected = true;
+          sendAs.appendChild(opt);
+        }
+      }
+      refreshLibrarySelect();
+      const search = document.getElementById('librarySearch');
+      if (search) search.addEventListener('input', refreshLibrarySelect);
+      document.getElementById('btnLoadLibrary').addEventListener('click', () => {
+        const name = document.getElementById('patternLibrary').value;
+        if (!name) { setStatus('Pick a library pattern first'); return; }
+        loadLibraryItem(name);
+      });
+      document.getElementById('btnSaveLibrary').addEventListener('click', () => {
+        const defaultName = 'slot-' + state.pattern.slot;
+        const name = (window.prompt('Name for this pattern', defaultName) || '').trim();
+        if (!name) return;
+        try {
+          const syx = buildPatternSysex();
+          saveLibraryDump(name, syx, state.pattern.slot);
+          refreshLibrarySelect();
+          document.getElementById('patternLibrary').value = name;
+          setStatus('Saved to library: ' + name);
+        } catch (err) {
+          setStatus('Save failed: ' + err.message);
+        }
+      });
+      document.getElementById('btnDeleteLibrary').addEventListener('click', () => {
+        const name = document.getElementById('patternLibrary').value;
+        if (!name) { setStatus('Pick a library pattern first'); return; }
+        const lib = loadLibrary();
+        delete lib[name];
+        writeLibrary(lib);
+        refreshLibrarySelect();
+        setStatus('Removed from library: ' + name);
+      });
+      document.getElementById('btnDeleteAllLibrary').addEventListener('click', () => {
+        if (!window.confirm('Clear the in-app library? iCloud files will not be deleted.')) return;
+        writeLibrary({});
+        refreshLibrarySelect();
+        setStatus('Library cleared (iCloud files unchanged)');
+      });
+      document.getElementById('btnExportLibrary').addEventListener('click', () => {
+        const name = document.getElementById('patternLibrary').value;
+        if (!name) { setStatus('Pick a library pattern first'); return; }
+        const item = loadLibrary()[name];
+        if (!item) return;
+        const bytes = hexToBytes(item.hex);
+        const blob = new Blob([bytes], { type: 'application/octet-stream' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = name + '.syx';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setStatus('Exported ' + name + '.syx');
+      });
+    }
+
+    // ---------- Tabs ----------
+    function initTabs() {
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('view-' + tab.dataset.tab).classList.add('active');
+        });
+      });
+    }
+
+    // ---------- Boot ----------
+    function initShortcuts() {
+      document.addEventListener('keydown', (e) => {
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+        const k = e.key.toLowerCase();
+        if ((e.metaKey || e.ctrlKey) && k === 'z') {
+          e.preventDefault();
+          if (e.shiftKey) redo(); else undo();
+          return;
+        }
+        if (k === 'b') document.getElementById('togBypass')?.click();
+        else if (k === 'l') document.getElementById('togLfo')?.click();
+        else if (k === 'm') document.getElementById('togFreq')?.click();
+        else if (k === 's') document.getElementById('togStaccato')?.click();
+        else if (k === 'p') sendCurrentPattern();
+        else if (k === 'r') document.getElementById('btnGlobalPatternReset')?.click();
+        else if (k === 'c') document.getElementById('btnGlobalClockReset')?.click();
+        else if (k === 'x') document.getElementById('btnStopPattern')?.click();
+        else if (k === 'o') {
+          e.preventDefault();
+          const steps = state.selectedSteps.length ? state.selectedSteps : [state.focusedStep];
+          pushUndo();
+          let turnOn = false;
+          state.selectedBands.forEach(i => {
+            steps.forEach(s => {
+              if (!state.pattern.bands[i].steps.has(s)) turnOn = true;
+            });
+          });
+          state.selectedBands.forEach(i => {
+            const band = state.pattern.bands[i];
+            steps.forEach(s => {
+              if (s > band.length) band.length = Math.min(64, s);
+              if (turnOn) band.steps.add(s);
+              else band.steps.delete(s);
+            });
+          });
+          persistSession();
+          maybeAutoSend();
+          buildGrid();
+        }
+        else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          const last = state.selectedBands[state.selectedBands.length - 1] ?? 0;
+          const alt = e.altKey;
+          if (e.shiftKey && e.key === 'ArrowDown') {
+            const next = last + 1;
+            if (next <= 7 && !state.selectedBands.includes(next)) state.selectedBands.push(next);
+            else if (state.selectedBands.length > 1) state.selectedBands.pop();
+          } else if (e.shiftKey && e.key === 'ArrowUp') {
+            const next = last - 1;
+            if (next >= 0 && !state.selectedBands.includes(next)) state.selectedBands.push(next);
+            else if (state.selectedBands.length > 1) state.selectedBands.pop();
+          } else if (!e.shiftKey && !alt && e.key === 'ArrowDown') {
+            state.selectedBands = [Math.min(7, last + 1)];
+          } else if (!e.shiftKey && !alt && e.key === 'ArrowUp') {
+            state.selectedBands = [Math.max(0, last - 1)];
+          } else if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+            const dir = e.key === 'ArrowRight' ? 1 : -1;
+            state.focusedStep = Math.max(1, Math.min(64, state.focusedStep + dir));
+            state.selectedSteps = [state.focusedStep];
+          } else if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+            const dir = e.key === 'ArrowRight' ? 1 : -1;
+            const src = (state.selectedSteps.length ? state.selectedSteps : [state.focusedStep]).slice();
+            const blocked = dir > 0 ? Math.max(...src) >= 64 : Math.min(...src) <= 1;
+            if (!blocked) {
+              state.selectedSteps = src.map(s => s + dir);
+              state.focusedStep = dir > 0 ? Math.max(...state.selectedSteps) : Math.min(...state.selectedSteps);
+            }
+          } else if (alt && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
+            const dir = e.key === 'ArrowRight' ? 1 : -1;
+            state.focusedStep = Math.max(1, Math.min(64, state.focusedStep + dir));
+            if (!state.selectedSteps.includes(state.focusedStep)) {
+              state.selectedSteps.push(state.focusedStep);
+            }
+          } else if (!e.shiftKey && !alt && e.key === 'ArrowRight') {
+            pushUndo();
+            state.selectedBands.forEach(i => {
+              const band = state.pattern.bands[i];
+              let added = false;
+              for (let s = 1; s <= band.length; s++) {
+                if (!band.steps.has(s)) { band.steps.add(s); added = true; break; }
+              }
+              if (!added && band.length < 64) {
+                band.length += 1;
+                band.steps.add(band.length);
+              }
+            });
+            persistSession();
+            maybeAutoSend();
+          } else if (!e.shiftKey && !alt && e.key === 'ArrowLeft') {
+            pushUndo();
+            state.selectedBands.forEach(i => {
+              const band = state.pattern.bands[i];
+              let lastOn = 0;
+              band.steps.forEach(s => { if (s <= band.length && s > lastOn) lastOn = s; });
+              if (lastOn) {
+                band.steps.delete(lastOn);
+                if (lastOn === band.length && band.length > 1) band.length -= 1;
+              }
+            });
+            persistSession();
+            maybeAutoSend();
+          }
+          buildGrid();
+        }
+      });
+    }
+
+    function boot() {
+      const saved = restoreSession();
+      if (saved && saved.pattern) {
+        applySnapshot(saved.pattern);
+        state.channel = saved.channel || 1;
+        state.visibleSteps = saved.visibleSteps || 64;
+        const ch = document.getElementById('midiChannel');
+        if (ch) ch.value = String(state.channel);
+      }
+
+      initTabs();
+      initMainControls();
+      initPatternToolbar();
+      buildGrid();
+      initKeyboard();
+      initGlobalResets();
+      initFactoryPresets();
+      initShortcuts();
+      initMIDI().then(() => {
+        if (saved && saved.portId) {
+          const sel = document.getElementById('midiPort');
+          if (sel.querySelector('option[value="' + saved.portId + '"]')) {
+            sel.value = saved.portId;
+            selectPort(saved.portId);
+          }
+        }
+      });
+
+      document.getElementById('midiPort').addEventListener('change', (e) => {
+        selectPort(e.target.value);
+        persistSession();
+      });
+      document.getElementById('btnRefreshMidi').addEventListener('click', refreshPorts);
+
+      setStatus('MIDI MuRF Editor v2.7 ready');
+    }
+
+    boot();
+  </script>
+</body>
+</html>
