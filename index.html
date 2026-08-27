@@ -6,23 +6,31 @@
   <title>MIDI MuRF Editor</title>
   <style>
     :root {
-      --bg: #1a1a1a;
-      --panel: #242424;
-      --panel-2: #2e2e2e;
-      --border: #3a3a3a;
-      --text: #e8e8e8;
-      --text-dim: #9a9a9a;
-      --accent: #c45c26;          /* Moog-ish orange */
-      --accent-dim: #8a3f1a;
-      --led-on: #e8a020;
-      --led-off: #3a3a3a;
-      --slider-track: #111;
-      --slider-fill: #c45c26;
-      --grid-off: #2a2a2a;
-      --grid-on: #c45c26;
-      --grid-header: #333;
+      --bg: #0c0c0e;
+      --panel: #141416;
+      --panel-2: #1c1c20;
+      --border: #2a2a30;
+      --text: #f2f2f0;
+      --text-dim: #8a8a8e;
+      --accent: #f4f4f0;
+      --accent-dim: #b8b8b4;
+      --led-on: #7dffb0;
+      --led-off: #2a2a2a;
+      --slider-track: #0a0a0a;
+      --slider-fill: #d8d8d4;
+      --grid-off: #1a1a1c;
+      --grid-on: #f0f0ec;
+      --grid-header: #101012;
       --danger: #a33;
       --success: #3a8a3a;
+      --b1: #c084fc;
+      --b2: #60a5fa;
+      --b3: #22d3ee;
+      --b4: #4ade80;
+      --b5: #a3e635;
+      --b6: #facc15;
+      --b7: #fb923c;
+      --b8: #f87171;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -290,7 +298,23 @@
       cursor: pointer;
     }
     .grid-label { min-height: 22px; }
-    .cell.on { background: var(--grid-on); }
+    .cell { border-radius: 50%; }
+    .cell.band0 { background: color-mix(in srgb, var(--b1) 18%, #161616); }
+    .cell.band1 { background: color-mix(in srgb, var(--b2) 18%, #161616); }
+    .cell.band2 { background: color-mix(in srgb, var(--b3) 18%, #161616); }
+    .cell.band3 { background: color-mix(in srgb, var(--b4) 18%, #161616); }
+    .cell.band4 { background: color-mix(in srgb, var(--b5) 18%, #161616); }
+    .cell.band5 { background: color-mix(in srgb, var(--b6) 18%, #161616); }
+    .cell.band6 { background: color-mix(in srgb, var(--b7) 18%, #161616); }
+    .cell.band7 { background: color-mix(in srgb, var(--b8) 18%, #161616); }
+    .cell.on.band0 { background: var(--b1); box-shadow: 0 0 8px var(--b1); }
+    .cell.on.band1 { background: var(--b2); box-shadow: 0 0 8px var(--b2); }
+    .cell.on.band2 { background: var(--b3); box-shadow: 0 0 8px var(--b3); }
+    .cell.on.band3 { background: var(--b4); box-shadow: 0 0 8px var(--b4); }
+    .cell.on.band4 { background: var(--b5); box-shadow: 0 0 8px var(--b5); }
+    .cell.on.band5 { background: var(--b6); box-shadow: 0 0 8px var(--b6); }
+    .cell.on.band6 { background: var(--b7); box-shadow: 0 0 8px var(--b7); }
+    .cell.on.band7 { background: var(--b8); box-shadow: 0 0 8px var(--b8); }
     .cell.out { opacity: 0.25; } /* beyond band length */
     .cell.cursor {
       outline: 2px solid #e8c36a;
@@ -331,9 +355,9 @@
       min-width: 56px;
       max-width: none;
       height: min(42vh, 280px);
-      background: linear-gradient(#f3e6d0, #d9c4a0);
-      color: #2a1a10;
-      border: 1px solid #333;
+      background: rgba(255,255,255,0.12);
+      color: #f4f4f0;
+      border: 1px solid #444;
       border-radius: 0 0 6px 6px;
       display: flex;
       align-items: flex-end;
@@ -352,7 +376,15 @@
       z-index: 1;
       position: relative;
     }
-    .key:active, .key.active { background: var(--accent); color: #fff; }
+    .key.band0 { background: color-mix(in srgb, var(--b1) 35%, transparent); }
+    .key.band1 { background: color-mix(in srgb, var(--b2) 35%, transparent); }
+    .key.band2 { background: color-mix(in srgb, var(--b3) 35%, transparent); }
+    .key.band3 { background: color-mix(in srgb, var(--b4) 35%, transparent); }
+    .key.band4 { background: color-mix(in srgb, var(--b5) 35%, transparent); }
+    .key.band5 { background: color-mix(in srgb, var(--b6) 35%, transparent); }
+    .key.band6 { background: color-mix(in srgb, var(--b7) 35%, transparent); }
+    .key.band7 { background: color-mix(in srgb, var(--b8) 35%, transparent); }
+    .key:active, .key.active { filter: brightness(1.45); color: #fff; }
 
     .mode-select {
       display: flex;
@@ -935,7 +967,7 @@
 
         for (let s = 1; s <= vis; s++) {
           const cell = document.createElement('div');
-          cell.className = 'cell';
+          cell.className = 'cell band' + b;
           cell.dataset.band = b;
           cell.dataset.step = s;
           if (state.pattern.bands[b].steps.has(s)) cell.classList.add('on');
@@ -1444,7 +1476,7 @@
         const notes = NOTE_MAPS[state.perfMode] || NOTE_MAPS.triggered;
         notes.forEach((note, i) => {
           const key = document.createElement('div');
-          key.className = 'key';
+          key.className = 'key' + (notes.length === 8 ? (' band' + (7 - i)) : '');
           key.textContent = state.perfMode === 'step' ? 'STEP' : ('F' + (i + 1));
           key.dataset.note = note;
           kb.appendChild(key);
@@ -1774,9 +1806,14 @@
             const next = last - 1;
             if (next >= 0 && !state.selectedBands.includes(next)) state.selectedBands.push(next);
             else if (state.selectedBands.length > 1) state.selectedBands.pop();
-          } else if (!e.shiftKey && !alt && e.key === 'ArrowDown') {
+          } else if ((e.ctrlKey || e.metaKey) && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+            const dir = e.key === 'ArrowDown' ? 1 : -1;
+            const src = state.selectedBands.slice();
+            const blocked = dir > 0 ? Math.max(...src) >= 7 : Math.min(...src) <= 0;
+            if (!blocked) state.selectedBands = src.map(i => i + dir);
+          } else if (!e.shiftKey && !alt && !e.ctrlKey && !e.metaKey && e.key === 'ArrowDown') {
             state.selectedBands = [Math.min(7, last + 1)];
-          } else if (!e.shiftKey && !alt && e.key === 'ArrowUp') {
+          } else if (!e.shiftKey && !alt && !e.ctrlKey && !e.metaKey && e.key === 'ArrowUp') {
             state.selectedBands = [Math.max(0, last - 1)];
           } else if (e.shiftKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) {
             const dir = e.key === 'ArrowRight' ? 1 : -1;
