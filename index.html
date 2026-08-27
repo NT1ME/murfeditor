@@ -312,7 +312,19 @@
       cursor: pointer;
     }
     .grid-label { min-height: 22px; }
-    .cell { border-radius: 50%; }
+    .cell { border-radius: 50%; position: relative; }
+    .len-grip {
+      position: absolute;
+      right: -5px;
+      top: 15%;
+      width: 9px;
+      height: 70%;
+      border-radius: 2px;
+      background: rgba(255,255,255,0.45);
+      cursor: ew-resize;
+      z-index: 4;
+      touch-action: none;
+    }
     .cell.band0 { background: color-mix(in srgb, var(--b1) 18%, #161616); }
     .cell.band1 { background: color-mix(in srgb, var(--b2) 18%, #161616); }
     .cell.band2 { background: color-mix(in srgb, var(--b3) 18%, #161616); }
@@ -988,6 +1000,13 @@
           if (state.pattern.bands[b].steps.has(s)) cell.classList.add('on');
           if (s > state.pattern.bands[b].length) cell.classList.add('out');
           if (state.selectedSteps.includes(s) && state.selectedBands.includes(b)) cell.classList.add('cursor');
+          if (s === state.pattern.bands[b].length) {
+            const grip = document.createElement('div');
+            grip.className = 'len-grip';
+            grip.title = 'Drag to set band length';
+            grip.addEventListener('pointerdown', onLenGrip);
+            cell.appendChild(grip);
+          }
           cell.addEventListener('pointerdown', onCellPointer);
           grid.appendChild(cell);
         }
@@ -1023,6 +1042,35 @@
 
     let paintMode = null; // true = turn on, false = turn off
 
+    function onLenGrip(e) {
+      e.preventDefault();
+      e.stopPropagation();
+      const cell = e.target.parentElement;
+      const band = parseInt(cell.dataset.band, 10);
+      pushUndo();
+      const apply = (ev) => {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY);
+        if (!el) return;
+        const hit = el.classList.contains('cell') ? el : el.closest('.cell');
+        if (!hit) return;
+        const s = parseInt(hit.dataset.step, 10);
+        if (!s) return;
+        const next = Math.max(1, Math.min(64, s));
+        if (state.pattern.bands[band].length !== next) {
+          state.pattern.bands[band].length = next;
+          buildGrid();
+        }
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', apply);
+        window.removeEventListener('pointerup', up);
+        persistSession();
+        maybeAutoSend();
+      };
+      window.addEventListener('pointermove', apply);
+      window.addEventListener('pointerup', up);
+    }
+
     function onCellPointer(e) {
       e.preventDefault();
       const band = parseInt(e.target.dataset.band, 10);
@@ -1042,6 +1090,7 @@
       }
       if (!state.selectedBands.includes(band)) state.selectedBands = [band];
       state.selectedSteps = [step];
+      if (step > state.pattern.bands[band].length) return;
       pushUndo();
       const steps = state.pattern.bands[band].steps;
       paintMode = !steps.has(step);
@@ -1052,7 +1101,7 @@
         if (el && el.classList.contains('cell')) {
           const b = parseInt(el.dataset.band, 10);
           const s = parseInt(el.dataset.step, 10);
-          toggleStep(b, s, paintMode);
+          if (s <= state.pattern.bands[b].length) toggleStep(b, s, paintMode);
         }
       };
       const up = () => {
@@ -1418,7 +1467,7 @@
 
       function refreshKeyVisuals() {
         kb.querySelectorAll('.key').forEach(k => k.classList.remove('active'));
-        if (state.perfMode === 'sustained' || state.perfMode === 'triggered') {
+        if (state.notePriority && (state.perfMode === 'sustained' || state.perfMode === 'triggered')) {
           monoStack.forEach(({ note }) => {
             const el = kb.querySelector(`.key[data-note="${note}"]`);
             if (el) el.classList.add('active');
