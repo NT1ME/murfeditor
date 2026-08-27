@@ -93,9 +93,23 @@
       min-height: 36px;
       min-width: 44px;
     }
-    button:active { background: var(--accent-dim); }
-    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-    button.primary:active { background: var(--accent-dim); }
+    button:active {
+      background: #d8d4c8;
+      color: #111;
+    }
+    button.primary, button.on, .mode-select button.active {
+      background: #e8e4d8;
+      border-color: #c4c0b4;
+      color: #111;
+    }
+    button.primary:active, button.on:active, .mode-select button.active:active {
+      background: #c8c4b8;
+      color: #111;
+    }
+    header button:active {
+      background: #d8d4c8;
+      color: #111;
+    }
     button:disabled { opacity: 0.4; cursor: not-allowed; }
 
     /* Tabs */
@@ -117,8 +131,8 @@
       border-radius: 0;
     }
     .tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
+      color: #f2f2f0;
+      border-bottom-color: #e8e4d8;
       background: var(--bg);
     }
 
@@ -307,19 +321,19 @@
     .cell.band5 { background: color-mix(in srgb, var(--b6) 18%, #161616); }
     .cell.band6 { background: color-mix(in srgb, var(--b7) 18%, #161616); }
     .cell.band7 { background: color-mix(in srgb, var(--b8) 18%, #161616); }
-    .cell.on.band0 { background: var(--b1); box-shadow: 0 0 8px var(--b1); }
-    .cell.on.band1 { background: var(--b2); box-shadow: 0 0 8px var(--b2); }
-    .cell.on.band2 { background: var(--b3); box-shadow: 0 0 8px var(--b3); }
-    .cell.on.band3 { background: var(--b4); box-shadow: 0 0 8px var(--b4); }
-    .cell.on.band4 { background: var(--b5); box-shadow: 0 0 8px var(--b5); }
-    .cell.on.band5 { background: var(--b6); box-shadow: 0 0 8px var(--b6); }
-    .cell.on.band6 { background: var(--b7); box-shadow: 0 0 8px var(--b7); }
-    .cell.on.band7 { background: var(--b8); box-shadow: 0 0 8px var(--b8); }
+    .cell.on.band0 { background: color-mix(in srgb, var(--b1) 72%, #000); }
+    .cell.on.band1 { background: color-mix(in srgb, var(--b2) 72%, #000); }
+    .cell.on.band2 { background: color-mix(in srgb, var(--b3) 72%, #000); }
+    .cell.on.band3 { background: color-mix(in srgb, var(--b4) 72%, #000); }
+    .cell.on.band4 { background: color-mix(in srgb, var(--b5) 72%, #000); }
+    .cell.on.band5 { background: color-mix(in srgb, var(--b6) 72%, #000); }
+    .cell.on.band6 { background: color-mix(in srgb, var(--b7) 72%, #000); }
+    .cell.on.band7 { background: color-mix(in srgb, var(--b8) 72%, #000); }
     .cell.out { opacity: 0.25; } /* beyond band length */
     .cell.cursor {
-      outline: 2px solid #e8c36a;
-      outline-offset: -2px;
-      z-index: 1;
+      outline: 2px solid #fff;
+      box-shadow: inset 0 0 0 2px #111, 0 0 0 1px #fff;
+      z-index: 2;
     }
 
     .band-meta {
@@ -392,7 +406,7 @@
       flex-wrap: wrap;
       margin-bottom: 12px;
     }
-    .mode-select button.active { background: var(--accent); color: #fff; }
+    .mode-select button.active { background: #e8e4d8; color: #111; }
 
     .status-bar {
       padding: 6px 12px;
