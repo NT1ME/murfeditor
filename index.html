@@ -980,6 +980,13 @@
 
     // ---------- Pattern Grid UI ----------
     function buildGrid() {
+      renderGridCells();
+      if (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#bandMeta')) {
+        buildBandMeta();
+      }
+    }
+
+    function renderGridCells() {
       const grid = document.getElementById('patternGrid');
       grid.innerHTML = '';
       const vis = state.visibleSteps || 64;
@@ -1046,10 +1053,6 @@
           grid.appendChild(cell);
         }
       }
-
-      if (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#bandMeta')) {
-        buildBandMeta();
-      }
     }
 
     function buildBandMeta() {
@@ -1069,27 +1072,27 @@
           state.armedEl = inp;
           inp.classList.add('kb-armed');
         });
-        const applyLen = (rebuild) => {
+        const applyLen = () => {
           let v = parseInt(inp.value, 10) || 1;
           v = Math.max(1, Math.min(64, v));
           state.pattern.bands[b].length = v;
           inp.value = v;
           persistSession();
           maybeAutoSend();
-          if (rebuild !== false) buildGrid();
+          renderGridCells();
         };
-        inp.addEventListener('change', () => applyLen(true));
+        inp.addEventListener('change', applyLen);
         inp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            applyLen(true);
+            applyLen();
             inp.select();
           }
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
             const d = e.key === 'ArrowUp' ? 1 : -1;
             inp.value = Math.max(1, Math.min(64, (parseInt(inp.value, 10) || 1) + d));
-            applyLen(false);
+            applyLen();
           }
         });
         lab.appendChild(inp);
@@ -2056,6 +2059,17 @@
     // ---------- Boot ----------
     function initShortcuts() {
       document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
+          e.preventDefault();
+          if (e.shiftKey) {
+            flashBtn('btnRedo');
+            redo();
+          } else {
+            flashBtn('btnUndo');
+            undo();
+          }
+          return;
+        }
         if (e.key === '`' || e.code === 'Backquote') {
           e.preventDefault();
           cycleAppTab(e.shiftKey ? -1 : 1);
@@ -2091,10 +2105,16 @@
           if (cur && cur.closest && cur.closest('#bandMeta') && cur.dataset.band != null) {
             const b = parseInt(cur.dataset.band, 10);
             commitIfValueBox(cur);
+            renderGridCells();
             const nextB = e.shiftKey ? (b + 7) % 8 : (b + 1) % 8;
-            buildGrid();
             const fresh = document.querySelector('#bandMeta input[data-band="' + nextB + '"]');
-            if (fresh) focusControl(fresh);
+            if (fresh) {
+              fresh.focus();
+              fresh.select();
+              state.armedEl = fresh;
+              document.querySelectorAll('.kb-armed').forEach(n => n.classList.remove('kb-armed'));
+              fresh.classList.add('kb-armed');
+            }
             return;
           }
           const list = flattenFocus();
