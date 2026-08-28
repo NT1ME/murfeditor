@@ -45,6 +45,14 @@
       -webkit-user-select: none;
       user-select: none;
     }
+    input, textarea, select {
+      -webkit-user-select: text;
+      user-select: text;
+    }
+    select.kb-armed, button.kb-armed, input.kb-armed {
+      outline: 2px solid #6ea8ff;
+      outline-offset: 2px;
+    }
 
     /* Header */
     header {
@@ -1039,7 +1047,9 @@
         }
       }
 
-      buildBandMeta();
+      if (!document.activeElement || !document.activeElement.closest || !document.activeElement.closest('#bandMeta')) {
+        buildBandMeta();
+      }
     }
 
     function buildBandMeta() {
@@ -1947,10 +1957,10 @@
           { box: null, els: ['midiPort', 'midiChannel'] },
           { box: document.querySelector('#view-main .panel'), els: ['pcPattern', 'togFreq', 'togLfo', 'togBypass', 'togStaccato', 'togClockSync'] },
           { box: document.querySelectorAll('#view-main .panel')[1], els: () => [
-            ...[...document.querySelectorAll('#view-main .panel .cc-slider, #view-main .panel .value-input')],
-            document.getElementById('btnPatternReset')
-          ].filter(Boolean) },
-          { box: document.querySelector('#view-main .panel:last-of-type'), els: () => [...document.querySelectorAll('#filterLevels .cc-slider, #filterLevels .value-input')] }
+            ...document.querySelectorAll('#view-main .panel:nth-of-type(2) .cc-slider, #view-main .panel:nth-of-type(2) .value-input')
+          ] },
+          { box: document.querySelector('#filterLevels')?.closest('.panel'), els: () => [...document.querySelectorAll('#filterLevels .cc-slider, #filterLevels .value-input')] },
+          { box: null, els: ['btnPatternReset'] }
         ];
       }
       if (tab === 'pattern') {
@@ -1985,8 +1995,24 @@
       if (sec && sec.box) sec.box.classList.add('section-focus');
     }
 
+    function clearArmed() {
+      document.querySelectorAll('.kb-armed').forEach(n => n.classList.remove('kb-armed'));
+      state.armedEl = null;
+    }
+
+    function currentFocusEl() {
+      return state.armedEl || document.activeElement;
+    }
+
     function focusControl(el) {
       if (!el) return;
+      clearArmed();
+      el.classList.add('kb-armed');
+      state.armedEl = el;
+      if (el.tagName === 'SELECT') {
+        markSectionFor(el);
+        return;
+      }
       el.focus();
       if (el.tagName === 'INPUT' && (el.type === 'number' || el.type === 'search' || el.type === 'text')) el.select();
       markSectionFor(el);
@@ -2000,6 +2026,7 @@
     }
 
     function focusGrid() {
+      clearArmed();
       const g = document.getElementById('patternGrid');
       if (g) { g.setAttribute('tabindex', '-1'); g.focus(); }
       document.querySelectorAll('.section-focus').forEach(n => n.classList.remove('section-focus'));
@@ -2010,25 +2037,42 @@
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Tab') {
           e.preventDefault();
+          if (e.ctrlKey || e.metaKey) {
+            cycleAppTab(e.shiftKey ? -1 : 1);
+            clearArmed();
+            return;
+          }
           if (e.altKey) {
             const secs = pageSections();
             if (!secs.length) return;
-            let si = secs.findIndex(s => resolveEls(s).includes(document.activeElement));
+            let si = secs.findIndex(s => resolveEls(s).includes(currentFocusEl()));
             if (si < 0) si = e.shiftKey ? 0 : -1;
             si = (si + (e.shiftKey ? -1 : 1) + secs.length) % secs.length;
-            const first = resolveEls(secs[si])[0];
-            focusControl(first);
-            return;
-          }
-          if (e.shiftKey) {
-            cycleAppTab(1);
+            focusControl(resolveEls(secs[si])[0]);
             return;
           }
           const list = flattenFocus();
           if (!list.length) return;
-          const i = list.indexOf(document.activeElement);
-          const next = list[(i < 0 ? 0 : i + 1) % list.length];
+          const i = list.indexOf(currentFocusEl());
+          const next = list[(i < 0 ? 0 : i + (e.shiftKey ? -1 : 1) + list.length) % list.length];
           focusControl(next);
+          return;
+        }
+        if (state.armedEl && state.armedEl.tagName === 'SELECT' &&
+            (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+          e.preventDefault();
+          const sel = state.armedEl;
+          const d = (e.key === 'ArrowUp' || e.key === 'ArrowLeft') ? -1 : 1;
+          const n = Math.max(0, Math.min(sel.options.length - 1, sel.selectedIndex + d));
+          if (n !== sel.selectedIndex) {
+            sel.selectedIndex = n;
+            sel.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          return;
+        }
+        if (state.armedEl && e.key === 'Enter' && state.armedEl.tagName !== 'INPUT') {
+          e.preventDefault();
+          state.armedEl.click();
           return;
         }
         const tag = (e.target && e.target.tagName) || '';
@@ -2116,10 +2160,9 @@
           buildGrid();
         }
         else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-          if (controlInFocus()) return;
-          e.preventDefault();
           if (activeTab() === 'keyboard' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey &&
               (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+            e.preventDefault();
             const order = ['triggered', 'sustained', 'mute', 'step'];
             let i = order.indexOf(state.perfMode);
             if (i < 0) i = 0;
@@ -2127,6 +2170,8 @@
             setPerfMode(order[i]);
             return;
           }
+          if (controlInFocus()) return;
+          e.preventDefault();
           const cmd = e.metaKey || e.ctrlKey;
           const shift = e.shiftKey;
           const alt = e.altKey;
