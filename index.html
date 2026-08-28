@@ -782,7 +782,8 @@
       selectedSteps: [1],
       visibleSteps: 64,
       perfMode: 'triggered',
-      notePriority: true
+      notePriority: true,
+      lastTabId: null
     };
 
     const SESSION_KEY = 'murf-session-v27';
@@ -1114,6 +1115,7 @@
         inp.max = 64;
         inp.value = state.pattern.bands[b].length;
         inp.dataset.band = b;
+        inp.id = 'bandlen-' + b;
         inp.addEventListener('focus', () => {
           inp.select();
           state.armedEl = inp;
@@ -1550,7 +1552,6 @@
       document.getElementById('importSyx').addEventListener('click', () => { document.getElementById('importSyx').value = ''; });
       document.getElementById('importSyx').addEventListener('change', async (e) => {
         const files = Array.from(e.target.files || []);
-        e.target.value = '';
         if (!files.length) return;
         let lastOk = 0;
         for (const file of files) {
@@ -2220,7 +2221,10 @@
           if (e.metaKey || e.ctrlKey || e.altKey) { /* fall through */ }
           else {
             e.preventDefault();
-            commitIfValueBox(currentFocusEl());
+            const cur = currentFocusEl();
+            if (cur && cur.id && cur.id !== 'patternGrid') state.lastTabId = cur.id;
+            else if (cur && cur.dataset && cur.dataset.band != null) state.lastTabId = 'bandlen-' + cur.dataset.band;
+            commitIfValueBox(cur);
             focusGrid();
             return;
           }
@@ -2242,6 +2246,14 @@
             return;
           }
           const cur = currentFocusEl();
+          const onGrid = !cur || cur === document.body || cur.id === 'patternGrid' || cur.id === 'app';
+          if (onGrid && state.lastTabId) {
+            let resume = document.getElementById(state.lastTabId);
+            if (!resume && String(state.lastTabId).startsWith('bandlen-')) {
+              resume = document.querySelector('#bandMeta input[data-band="' + state.lastTabId.split('-')[1] + '"]');
+            }
+            if (resume) { focusControl(resume); return; }
+          }
           if (cur && cur.closest && cur.closest('#bandMeta') && cur.dataset.band != null) {
             const b = parseInt(cur.dataset.band, 10);
             commitIfValueBox(cur);
@@ -2472,7 +2484,7 @@
       initConfirm();
       document.querySelectorAll('button').forEach(btn => {
         if (btn.classList.contains('toggle')) return;
-        btn.addEventListener('pointerdown', () => {
+        btn.addEventListener('click', () => {
           btn.classList.add('pressed');
           setTimeout(() => btn.classList.remove('pressed'), 220);
         });
