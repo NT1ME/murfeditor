@@ -146,12 +146,10 @@
       outline: 2px solid #6ea8ff;
       outline-offset: 2px;
     }
-    label.import-btn input[type=file] {
-      display: block;
-      margin-top: 4px;
-      max-width: 180px;
-      color: var(--text);
+    label.import-btn {
+      display: inline-flex; align-items: center; white-space: nowrap;
     }
+    label.import-btn input { display: none !important; }
     button.pressed, button:active {
       background: #d8d4c8;
       color: #111;
@@ -727,8 +725,9 @@
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
             <label id="btnImportSyx" class="import-btn">Import .syx
-              <input type="file" id="importSyx" multiple />
+              <input type="file" id="importSyx" accept=".syx,*" multiple style="display:none" />
             </label>
+            <button type="button" id="btnPasteSyx">Paste SysEx</button>
           </div>
           <div class="tgroup lib">
             <span class="tlabel">Library</span>
@@ -781,6 +780,16 @@
         <div class="row" style="justify-content:flex-end;gap:8px">
           <button type="button" id="confirmNo">No</button>
           <button type="button" id="confirmYes">Yes</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-back" id="pasteModal">
+      <div class="modal-card" style="min-width:min(520px,92vw)">
+        <p>Paste SysEx hex (F0 … F7). Multiple messages allowed.</p>
+        <textarea id="pasteSyxText" rows="8" style="width:100%;margin-bottom:12px;padding:8px;font-family:ui-monospace,monospace;font-size:12px"></textarea>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button type="button" id="pasteSyxCancel">Cancel</button>
+          <button type="button" id="pasteSyxOk">Import</button>
         </div>
       </div>
     </div>
@@ -1632,6 +1641,54 @@
           await ingestSyxFiles(e.dataTransfer && e.dataTransfer.files);
         });
       }
+
+      function parseSyxHex(text) {
+        const hex = String(text || '').replace(/[^0-9a-fA-F]/g, '');
+        if (hex.length < 12 || hex.length % 2) return [];
+        const bytes = new Uint8Array(hex.length / 2);
+        for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+        const out = [];
+        let i = 0;
+        while (i < bytes.length) {
+          if (bytes[i] !== 0xF0) { i++; continue; }
+          let j = i + 1;
+          while (j < bytes.length && bytes[j] !== 0xF7) j++;
+          if (j < bytes.length) { out.push(bytes.slice(i, j + 1)); i = j + 1; }
+          else break;
+        }
+        return out;
+      }
+      function importSyxFrames(frames, label) {
+        let lastOk = 0;
+        frames.forEach((frame, n) => {
+          if (frame.length < 6 || frame[1] !== 0x04 || frame[2] !== 0x0A || frame[3] !== 0x05) return;
+          if (frame.length !== 267) { setStatus('Unexpected SysEx length ' + frame.length); return; }
+          const payload = String.fromCharCode(...frame.slice(4, -1));
+          const slot = parseInt(payload.slice(4, 6), 16) || 0;
+          const name = (label || 'pasted') + (frames.length > 1 ? ('-' + (n + 1)) : '');
+          saveLibraryDump(name.replace(/-+$/, '') || ('pattern-' + slot), frame, slot);
+          lastOk++;
+        });
+        refreshLibrarySelect();
+        setStatus(lastOk ? ('Imported ' + lastOk + ' pattern(s) into library') : 'Import failed');
+        return lastOk;
+      }
+      document.getElementById('btnPasteSyx').addEventListener('click', () => {
+        flashBtn('btnPasteSyx');
+        const modal = document.getElementById('pasteModal');
+        const ta = document.getElementById('pasteSyxText');
+        ta.value = '';
+        modal.classList.add('show');
+        setTimeout(() => ta.focus(), 30);
+      });
+      document.getElementById('pasteSyxCancel').addEventListener('click', () => {
+        document.getElementById('pasteModal').classList.remove('show');
+      });
+      document.getElementById('pasteSyxOk').addEventListener('click', () => {
+        const frames = parseSyxHex(document.getElementById('pasteSyxText').value);
+        document.getElementById('pasteModal').classList.remove('show');
+        importSyxFrames(frames, 'pasted');
+      });
       document.getElementById('importSyx').addEventListener('change', async (e) => {
         document.getElementById('btnImportSyx')?.classList.add('pressed');
         setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
@@ -2137,7 +2194,7 @@
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
           { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand', 'btnInitPattern'] },
-          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
+          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx', 'btnPasteSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
       }
