@@ -318,8 +318,26 @@
       padding: 2px;
       white-space: pre-line;
     }
-    .grid-label.band { cursor: pointer; }
-    .grid-label.band.selected { color: var(--accent); outline: 1px solid var(--accent); }
+    .grid-label.band { cursor: pointer; font-weight: 700; }
+    .grid-label.band.selected { outline: 1px solid #fff; }
+    .grid-label.band0, .band-meta label.band0 { color: var(--b1); font-weight: 700; }
+    .grid-label.band1, .band-meta label.band1 { color: var(--b2); font-weight: 700; }
+    .grid-label.band2, .band-meta label.band2 { color: var(--b3); font-weight: 700; }
+    .grid-label.band3, .band-meta label.band3 { color: var(--b4); font-weight: 700; }
+    .grid-label.band4, .band-meta label.band4 { color: var(--b5); font-weight: 700; }
+    .grid-label.band5, .band-meta label.band5 { color: var(--b6); font-weight: 700; }
+    .grid-label.band6, .band-meta label.band6 { color: var(--b7); font-weight: 700; }
+    .grid-label.band7, .band-meta label.band7 { color: var(--b8); font-weight: 700; }
+    .modal-back {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
+      display: none; align-items: center; justify-content: center; z-index: 50;
+    }
+    .modal-back.show { display: flex; }
+    .modal-card {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 18px 20px; min-width: 280px; max-width: 90vw;
+    }
+    .modal-card p { margin-bottom: 14px; }
     .cell {
       width: var(--cell);
       min-width: var(--cell);
@@ -675,7 +693,7 @@
             <label>Send as
               <select id="sendAsSlot"></select>
             </label>
-            <button id="btnLoadLibrary">Load / Send</button>
+            <button id="btnLoadLibrary">Load</button>
             <button id="btnSaveLibrary">Save Current to Library</button>
             <button id="btnDeleteLibrary">Delete From Library</button>
             <button id="btnDeleteAllLibrary">Delete All From Library</button>
@@ -707,6 +725,15 @@
     </main>
 
     <div class="status-bar" id="status">Ready</div>
+    <div class="modal-back" id="confirmModal">
+      <div class="modal-card">
+        <p id="confirmMsg">Clear the in-app library? iCloud files will not be deleted.</p>
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button type="button" id="confirmNo">No</button>
+          <button type="button" id="confirmYes">Yes</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1005,7 +1032,7 @@
 
       for (let b = 0; b < 8; b++) {
         const label = document.createElement('div');
-        label.className = 'grid-label band' + (state.selectedBands.includes(b) ? ' selected' : '');
+        label.className = 'grid-label band band' + b + (state.selectedBands.includes(b) ? ' selected' : '');
         const freq = BAND_FREQ_TOP_TO_BOTTOM[b];
         label.textContent = 'Band ' + (b + 1) + '\n' + freq[0] + '\n' + freq[1];
         label.title = 'Bass ' + freq[0] + ' / Mids ' + freq[1] + ' — tap to select, tap again to add/remove';
@@ -1060,6 +1087,7 @@
       wrap.innerHTML = '';
       for (let b = 0; b < 8; b++) {
         const lab = document.createElement('label');
+        lab.className = 'band' + b;
         lab.textContent = 'Band ' + (b + 1) + ' ';
         const inp = document.createElement('input');
         inp.type = 'number';
@@ -1857,14 +1885,13 @@
         bytes[8] = nn.charCodeAt(0);
         bytes[9] = nn.charCodeAt(1);
       }
-      sendSysex(bytes);
       if (bytes.length >= 6) {
         let payload = '';
         for (let i = 4; i < bytes.length - 1; i++) payload += String.fromCharCode(bytes[i]);
         applyPayloadToGrid(payload, sendAs);
       }
       persistSession();
-      setStatus('Loaded & sent: ' + name + ' → slot ' + sendAs);
+      setStatus('Loaded to grid: ' + name + ' (slot ' + sendAs + ', not sent)');
     }
 
     function initFactoryPresets() {
@@ -1883,11 +1910,13 @@
       const search = document.getElementById('librarySearch');
       if (search) search.addEventListener('input', refreshLibrarySelect);
       document.getElementById('btnLoadLibrary').addEventListener('click', () => {
+        flashBtn('btnLoadLibrary');
         const name = document.getElementById('patternLibrary').value;
         if (!name) { setStatus('Pick a library pattern first'); return; }
         loadLibraryItem(name);
       });
       document.getElementById('btnSaveLibrary').addEventListener('click', () => {
+        flashBtn('btnSaveLibrary');
         const defaultName = 'slot-' + state.pattern.slot;
         const name = (window.prompt('Name for this pattern', defaultName) || '').trim();
         if (!name) return;
@@ -1902,6 +1931,7 @@
         }
       });
       document.getElementById('btnDeleteLibrary').addEventListener('click', () => {
+        flashBtn('btnDeleteLibrary');
         const name = document.getElementById('patternLibrary').value;
         if (!name) { setStatus('Pick a library pattern first'); return; }
         const lib = loadLibrary();
@@ -1911,10 +1941,12 @@
         setStatus('Removed from library: ' + name);
       });
       document.getElementById('btnDeleteAllLibrary').addEventListener('click', () => {
-        if (!window.confirm('Clear the in-app library? iCloud files will not be deleted.')) return;
-        writeLibrary({});
-        refreshLibrarySelect();
-        setStatus('Library cleared (iCloud files unchanged)');
+        flashBtn('btnDeleteAllLibrary');
+        openConfirm('Clear the in-app library? iCloud files will not be deleted.', () => {
+          writeLibrary({});
+          refreshLibrarySelect();
+          setStatus('Library cleared (iCloud files unchanged)');
+        });
       });
       document.getElementById('btnExportLibrary').addEventListener('click', () => {
         const name = document.getElementById('patternLibrary').value;
@@ -2054,6 +2086,48 @@
       const g = document.getElementById('patternGrid');
       if (g) { g.setAttribute('tabindex', '-1'); g.focus(); }
       document.querySelectorAll('.section-focus').forEach(n => n.classList.remove('section-focus'));
+    }
+
+    let confirmCb = null;
+    function openConfirm(msg, onYes) {
+      const modal = document.getElementById('confirmModal');
+      const yes = document.getElementById('confirmYes');
+      const no = document.getElementById('confirmNo');
+      document.getElementById('confirmMsg').textContent = msg;
+      confirmCb = onYes;
+      modal.classList.add('show');
+      yes.classList.add('pressed');
+      no.classList.remove('pressed');
+      yes.focus();
+    }
+    function closeConfirm(ok) {
+      const modal = document.getElementById('confirmModal');
+      modal.classList.remove('show');
+      const cb = confirmCb;
+      confirmCb = null;
+      if (ok && cb) cb();
+    }
+    function initConfirm() {
+      const yes = document.getElementById('confirmYes');
+      const no = document.getElementById('confirmNo');
+      yes.addEventListener('click', () => closeConfirm(true));
+      no.addEventListener('click', () => closeConfirm(false));
+      document.addEventListener('keydown', (e) => {
+        if (!document.getElementById('confirmModal').classList.contains('show')) return;
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (document.activeElement === yes) { no.focus(); yes.classList.remove('pressed'); no.classList.add('pressed'); }
+          else { yes.focus(); no.classList.remove('pressed'); yes.classList.add('pressed'); }
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          e.stopPropagation();
+          closeConfirm(document.activeElement === no ? false : true);
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          closeConfirm(false);
+        }
+      }, true);
     }
 
     // ---------- Boot ----------
@@ -2319,6 +2393,14 @@
       initKeyboard();
       initGlobalResets();
       initFactoryPresets();
+      initConfirm();
+      document.querySelectorAll('button').forEach(btn => {
+        if (btn.classList.contains('toggle')) return;
+        btn.addEventListener('pointerdown', () => {
+          btn.classList.add('pressed');
+          setTimeout(() => btn.classList.remove('pressed'), 140);
+        });
+      });
       initShortcuts();
       initMIDI().then(() => {
         if (saved && saved.portId) {
