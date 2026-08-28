@@ -49,7 +49,7 @@
       -webkit-user-select: text;
       user-select: text;
     }
-    select.kb-armed, button.kb-armed, input.kb-armed {
+    select.kb-armed, button.kb-armed, input.kb-armed, label.kb-armed {
       outline: 2px solid #6ea8ff;
       outline-offset: 2px;
     }
@@ -540,7 +540,7 @@
             </div>
           </div>
 
-          <div class="panel" style="flex:2; min-width:260px">
+          <div class="panel" id="panelMainControls" style="flex:2; min-width:260px">
             <h2>Main Controls</h2>
             <div class="row" style="gap:16px">
               <div class="control" style="flex:1">
@@ -587,7 +587,7 @@
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel" id="panelFilters">
           <h2>Filter Levels (CC20–27) — stops pattern clock</h2>
           <div class="row" id="filterLevels"></div>
         </div>
@@ -657,7 +657,7 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <label id="btnImportSyx" class="primary" style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:4px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer">
+            <label id="btnImportSyx" tabindex="0" class="primary" style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:4px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer">
               Import .syx
               <input type="file" id="importSyx" accept=".syx,*" multiple style="display:none" />
             </label>
@@ -1078,13 +1078,12 @@
           maybeAutoSend();
           if (rebuild !== false) buildGrid();
         };
-        inp.addEventListener('change', () => applyLen(false));
+        inp.addEventListener('change', () => applyLen(true));
         inp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
             applyLen(true);
-            inp.blur();
-            clearArmed();
+            inp.select();
           }
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
@@ -1962,10 +1961,10 @@
         return [
           { box: null, els: ['midiPort', 'midiChannel'] },
           { box: document.querySelector('#view-main .panel'), els: ['pcPattern', 'togFreq', 'togLfo', 'togBypass', 'togStaccato', 'togClockSync'] },
-          { box: document.querySelectorAll('#view-main .panel')[1], els: () => [
-            ...document.querySelectorAll('#view-main .panel:nth-of-type(2) .cc-slider, #view-main .panel:nth-of-type(2) .value-input')
+          { box: document.getElementById('panelMainControls'), els: () => [
+            ...document.querySelectorAll('#panelMainControls .cc-slider, #panelMainControls .value-input')
           ] },
-          { box: document.querySelector('#filterLevels')?.closest('.panel'), els: () => [...document.querySelectorAll('#filterLevels .cc-slider, #filterLevels .value-input')] },
+          { box: document.getElementById('panelFilters'), els: () => [...document.querySelectorAll('#panelFilters .cc-slider, #panelFilters .value-input')] },
           { box: null, els: ['btnPatternReset'] }
         ];
       }
