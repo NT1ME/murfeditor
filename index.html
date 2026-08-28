@@ -123,11 +123,32 @@
     .import-wrap.pressed .import-fake, .import-wrap:active .import-fake {
       background: #d8d4c8; color: #111;
     }
+    .import-wrap.kb-armed, .import-wrap:focus-within {
+      outline: 2px solid #6ea8ff;
+      outline-offset: 2px;
+    }
     .import-real {
       position: absolute; inset: 0; width: 100%; height: 100%;
-      opacity: 0; cursor: pointer; font-size: 48px;
+      opacity: 0.02; cursor: pointer; font-size: 80px;
+      -webkit-tap-highlight-color: transparent;
     }
 
+    label.import-btn {
+      display: inline-flex; align-items: center;
+      padding: 6px 10px; border-radius: 4px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      cursor: pointer; color: var(--text); font: inherit;
+    }
+    label.import-btn.pressed, label.import-btn:active, label.import-btn.kb-armed {
+      background: #d8d4c8; color: #111;
+    }
+    label.import-btn.kb-armed, label.import-btn:focus-visible {
+      outline: 2px solid #6ea8ff;
+      outline-offset: 2px;
+    }
+    label.import-btn input[type=file] {
+      position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;
+    }
     button.pressed, button:active {
       background: #d8d4c8;
       color: #111;
@@ -702,10 +723,9 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <span id="btnImportSyx" class="import-wrap">
-              <span class="import-fake">Import .syx</span>
-              <input type="file" id="importSyx" class="import-real" accept=".syx,.SYX,*/*" multiple />
-            </span>
+            <label id="btnImportSyx" class="import-btn" tabindex="0">Import .syx
+              <input type="file" id="importSyx" accept=".syx,*" multiple />
+            </label>
           </div>
           <div class="tgroup lib">
             <span class="tlabel">Library</span>
@@ -1567,15 +1587,10 @@
         }
       });
 
-      const importWrap = document.getElementById('btnImportSyx');
-      const importInp = document.getElementById('importSyx');
-      const flashImport = () => {
-        importWrap?.classList.add('pressed');
-        setTimeout(() => importWrap?.classList.remove('pressed'), 220);
-      };
-      importInp.addEventListener('pointerdown', flashImport);
-      importInp.addEventListener('change', async (e) => {
-        flashImport();
+      document.getElementById('importSyx').addEventListener('change', async (e) => {
+        document.getElementById('btnImportSyx')?.classList.add('pressed');
+        setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
+
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
         let lastOk = 0;
@@ -2074,7 +2089,7 @@
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
           { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand', 'btnInitPattern'] },
-          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'importSyx'] },
+          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
       }
@@ -2122,6 +2137,7 @@
       clearArmed();
       el.classList.add('kb-armed');
       state.armedEl = el;
+      if (el.id === 'importSyx') document.getElementById('btnImportSyx')?.classList.add('kb-armed');
       if (el.tagName === 'SELECT') {
         markSectionFor(el);
         return;
@@ -2321,16 +2337,19 @@
           }
           return;
         }
-        if (state.armedEl && e.key === 'Enter' && state.armedEl.tagName !== 'INPUT' && state.armedEl.id !== 'importSyx') {
-          e.preventDefault();
-          state.armedEl.click();
-          return;
-        }
-        if ((e.target && e.target.id === 'importSyx') && e.key === 'Enter') {
+        const enterEl = e.target;
+        const importEnter = enterEl && (enterEl.id === 'btnImportSyx' || enterEl.id === 'importSyx' || enterEl.closest?.('#btnImportSyx'));
+        if (importEnter && e.key === 'Enter') {
           document.getElementById('btnImportSyx')?.classList.add('pressed');
           setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
           return;
         }
+        if (state.armedEl && e.key === 'Enter' && state.armedEl.tagName !== 'INPUT') {
+          e.preventDefault();
+          state.armedEl.click();
+          return;
+        }
+
         const tag = (e.target && e.target.tagName) || '';
         const ttype = (e.target && e.target.type) || '';
         const textField = tag === 'TEXTAREA' || (tag === 'INPUT' && (ttype === 'text' || ttype === 'search' || e.target.id === 'nameModalInput'));
