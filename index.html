@@ -110,6 +110,20 @@
     .panel.section-focus, .tgroup.section-focus {
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45);
     }
+
+    label.import-btn {
+      display: inline-flex; align-items: center;
+      padding: 6px 10px; border-radius: 4px;
+      background: var(--panel-2); border: 1px solid var(--border);
+      cursor: pointer; color: var(--text); font: inherit;
+    }
+    label.import-btn.pressed, label.import-btn:active {
+      background: #d8d4c8; color: #111;
+    }
+    label.import-btn input[type=file] {
+      position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden;
+    }
+
     button.pressed, button:active {
       background: #d8d4c8;
       color: #111;
@@ -684,8 +698,9 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <button type="button" id="btnImportSyx">Import .syx</button>
-            <input type="file" id="importSyx" accept=".syx,.SYX,application/octet-stream,*/*" multiple tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0" />
+            <label id="btnImportSyx" tabindex="0" class="import-btn">Import .syx
+              <input type="file" id="importSyx" accept=".syx,.SYX,*/*" multiple tabindex="-1" />
+            </label>
           </div>
           <div class="tgroup lib">
             <span class="tlabel">Library</span>
@@ -1547,13 +1562,6 @@
         }
       });
 
-      document.getElementById('btnImportSyx').addEventListener('click', (e) => {
-        e.preventDefault();
-        flashBtn('btnImportSyx');
-        const inp = document.getElementById('importSyx');
-        inp.value = '';
-        inp.click();
-      });
       document.getElementById('importSyx').addEventListener('change', async (e) => {
         flashBtn('btnImportSyx');
         const files = Array.from(e.target.files || []);
