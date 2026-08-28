@@ -98,7 +98,7 @@
     }
     button {
       cursor: pointer;
-      min-height: 36px;
+      min-height: 26px;
       min-width: 44px;
     }
     button:focus-visible,
@@ -323,7 +323,7 @@
     .grid-label.band {
       cursor: pointer; font-weight: 700;
       flex-direction: column; align-items: center; justify-content: center;
-      min-height: 52px; gap: 1px;
+      min-height: 42px; gap: 1px;
     }
     .grid-label.band .bname { font-weight: 700; line-height: 1.2; }
     .grid-label.band .freq { color: #f2f2f0; font-weight: 400; line-height: 1.15; }
@@ -678,6 +678,7 @@
             <button id="btnPastePattern">Paste Pattern</button>
             <button id="btnCopyBand">Copy Band(s)</button>
             <button id="btnPasteBand">Paste Band(s)</button>
+            <button id="btnInitPattern">Init Pattern</button>
           </div>
           <div class="tgroup files">
             <span class="tlabel">Files</span>
@@ -1493,6 +1494,17 @@
         setStatus('Selection collapsed to caret');
       });
 
+            document.getElementById('btnInitPattern').addEventListener('click', () => {
+        flashBtn('btnInitPattern');
+        pushUndo();
+        state.pattern.lfo = 0;
+        state.pattern.bands = Array.from({ length: 8 }, () => ({ length: 1, steps: new Set() }));
+        const lfoEl = document.getElementById('patternLfo');
+        if (lfoEl) lfoEl.value = 0;
+        persistSession();
+        buildGrid();
+        setStatus('Init pattern (empty)');
+      });
       document.getElementById('btnCopyPattern').addEventListener('click', () => {
         state.clipboard = {
           lfo: state.pattern.lfo,
@@ -1535,8 +1547,10 @@
         }
       });
 
+      document.getElementById('importSyx').addEventListener('click', () => { document.getElementById('importSyx').value = ''; });
       document.getElementById('importSyx').addEventListener('change', async (e) => {
         const files = Array.from(e.target.files || []);
+        e.target.value = '';
         if (!files.length) return;
         let lastOk = 0;
         for (const file of files) {
@@ -2033,7 +2047,7 @@
           { box: document.querySelector('.tgroup.fit'), els: () => [...document.querySelectorAll('.tgroup.fit [data-fit]')] },
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
-          { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand'] },
+          { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand', 'btnInitPattern'] },
           { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
@@ -2232,7 +2246,15 @@
             const b = parseInt(cur.dataset.band, 10);
             commitIfValueBox(cur);
             renderGridCells();
-            const nextB = e.shiftKey ? (b + 7) % 8 : (b + 1) % 8;
+            const leaving = (!e.shiftKey && b === 7) || (e.shiftKey && b === 0);
+            if (leaving) {
+              const list = flattenFocus();
+              const i = list.indexOf(cur);
+              const next = list[(i < 0 ? 0 : i + (e.shiftKey ? -1 : 1) + list.length) % list.length];
+              focusControl(next);
+              return;
+            }
+            const nextB = e.shiftKey ? b - 1 : b + 1;
             const fresh = document.querySelector('#bandMeta input[data-band="' + nextB + '"]');
             if (fresh) {
               fresh.focus();
@@ -2452,7 +2474,7 @@
         if (btn.classList.contains('toggle')) return;
         btn.addEventListener('pointerdown', () => {
           btn.classList.add('pressed');
-          setTimeout(() => btn.classList.remove('pressed'), 140);
+          setTimeout(() => btn.classList.remove('pressed'), 220);
         });
       });
       initShortcuts();
