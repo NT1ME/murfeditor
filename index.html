@@ -1689,6 +1689,12 @@
         document.getElementById('pasteModal').classList.remove('show');
         importSyxFrames(frames, 'pasted');
       });
+      document.getElementById('btnImportSyx')?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === 'Return' || e.key === ' ') {
+          document.getElementById('btnImportSyx').classList.add('pressed');
+          setTimeout(() => document.getElementById('btnImportSyx').classList.remove('pressed'), 220);
+        }
+      });
       document.getElementById('importSyx').addEventListener('change', async (e) => {
         document.getElementById('btnImportSyx')?.classList.add('pressed');
         setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
@@ -2446,7 +2452,7 @@
         }
         const enterEl = e.target;
         const importEnter = enterEl && (enterEl.id === 'btnImportSyx' || enterEl.id === 'importSyx' || enterEl.closest?.('#btnImportSyx'));
-        if (importEnter && e.key === 'Enter') {
+        if (importEnter && (e.key === 'Enter' || e.key === 'Return')) {
           document.getElementById('btnImportSyx')?.classList.add('pressed');
           setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
           return;
