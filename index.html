@@ -684,10 +684,8 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <label id="btnImportSyx" tabindex="0" class="primary" style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:4px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer">
-              Import .syx
-              <input type="file" id="importSyx" accept=".syx,*" multiple style="display:none" />
-            </label>
+            <button type="button" id="btnImportSyx">Import .syx</button>
+            <input type="file" id="importSyx" accept=".syx,.SYX,application/octet-stream,*/*" multiple tabindex="-1" style="position:absolute;width:1px;height:1px;opacity:0" />
           </div>
           <div class="tgroup lib">
             <span class="tlabel">Library</span>
@@ -1549,8 +1547,15 @@
         }
       });
 
-      document.getElementById('importSyx').addEventListener('click', () => { document.getElementById('importSyx').value = ''; });
+      document.getElementById('btnImportSyx').addEventListener('click', (e) => {
+        e.preventDefault();
+        flashBtn('btnImportSyx');
+        const inp = document.getElementById('importSyx');
+        inp.value = '';
+        inp.click();
+      });
       document.getElementById('importSyx').addEventListener('change', async (e) => {
+        flashBtn('btnImportSyx');
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
         let lastOk = 0;
