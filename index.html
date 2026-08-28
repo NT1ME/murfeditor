@@ -318,6 +318,8 @@
       padding: 2px;
       white-space: pre-line;
     }
+    .grid-label.corner { color: #fff; font-weight: 700; letter-spacing: 0.02em; }
+    .grid-label .freq { color: #f2f2f0; font-weight: 400; }
     .grid-label.band { cursor: pointer; font-weight: 700; }
     .grid-label.band.selected { outline: 1px solid #fff; }
     .grid-label.band0, .band-meta label.band0 { color: var(--b1); font-weight: 700; }
@@ -734,6 +736,16 @@
         </div>
       </div>
     </div>
+    <div class="modal-back" id="nameModal">
+      <div class="modal-card">
+        <p>Name for this pattern</p>
+        <input type="text" id="nameModalInput" style="width:100%;margin-bottom:12px;padding:8px" />
+        <div class="row" style="justify-content:flex-end;gap:8px">
+          <button type="button" id="nameCancel">Cancel</button>
+          <button type="button" id="nameOk">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -1020,7 +1032,7 @@
       grid.style.gridTemplateColumns = `86px repeat(${vis}, var(--cell))`;
 
       const corner = document.createElement('div');
-      corner.className = 'grid-label';
+      corner.className = 'grid-label corner';
       corner.textContent = 'Bass\nMids';
       grid.appendChild(corner);
       for (let s = 1; s <= vis; s++) {
@@ -1034,7 +1046,7 @@
         const label = document.createElement('div');
         label.className = 'grid-label band band' + b + (state.selectedBands.includes(b) ? ' selected' : '');
         const freq = BAND_FREQ_TOP_TO_BOTTOM[b];
-        label.textContent = 'Band ' + (b + 1) + '\n' + freq[0] + '\n' + freq[1];
+        label.innerHTML = 'Band ' + (b + 1) + '<span class="freq">\n' + freq[0] + '\n' + freq[1] + '</span>';
         label.title = 'Bass ' + freq[0] + ' / Mids ' + freq[1] + ' — tap to select, tap again to add/remove';
         label.addEventListener('click', (ev) => {
           if (ev.shiftKey) {
@@ -1917,18 +1929,17 @@
       });
       document.getElementById('btnSaveLibrary').addEventListener('click', () => {
         flashBtn('btnSaveLibrary');
-        const defaultName = 'slot-' + state.pattern.slot;
-        const name = (window.prompt('Name for this pattern', defaultName) || '').trim();
-        if (!name) return;
-        try {
-          const syx = buildPatternSysex();
-          saveLibraryDump(name, syx, state.pattern.slot);
-          refreshLibrarySelect();
-          document.getElementById('patternLibrary').value = name;
-          setStatus('Saved to library: ' + name);
-        } catch (err) {
-          setStatus('Save failed: ' + err.message);
-        }
+        openNameModal('slot-' + state.pattern.slot, (name) => {
+          try {
+            const syx = buildPatternSysex();
+            saveLibraryDump(name, syx, state.pattern.slot);
+            refreshLibrarySelect();
+            document.getElementById('patternLibrary').value = name;
+            setStatus('Saved to library: ' + name);
+          } catch (err) {
+            setStatus('Save failed: ' + err.message);
+          }
+        });
       });
       document.getElementById('btnDeleteLibrary').addEventListener('click', () => {
         flashBtn('btnDeleteLibrary');
@@ -1999,7 +2010,7 @@
       const tab = activeTab();
       if (tab === 'main') {
         return [
-          { box: null, els: ['midiPort', 'midiChannel'] },
+          { box: null, els: ['midiPort', 'btnRefreshMidi', 'midiChannel'] },
           { box: document.querySelector('#view-main .panel'), els: ['pcPattern', 'togFreq', 'togLfo', 'togBypass', 'togStaccato', 'togClockSync'] },
           { box: document.getElementById('panelMainControls'), els: () => [
             ...document.querySelectorAll('#panelMainControls .cc-slider, #panelMainControls .value-input'),
@@ -2107,12 +2118,40 @@
       confirmCb = null;
       if (ok && cb) cb();
     }
+    let nameCb = null;
+    function openNameModal(def, onOk) {
+      const modal = document.getElementById('nameModal');
+      const inp = document.getElementById('nameModalInput');
+      nameCb = onOk;
+      inp.value = def || '';
+      modal.classList.add('show');
+      setTimeout(() => { inp.focus(); inp.select(); }, 30);
+    }
+    function closeNameModal(ok) {
+      const modal = document.getElementById('nameModal');
+      const inp = document.getElementById('nameModalInput');
+      modal.classList.remove('show');
+      const cb = nameCb;
+      nameCb = null;
+      const name = (inp.value || '').trim();
+      if (ok && name && cb) cb(name);
+    }
     function initConfirm() {
       const yes = document.getElementById('confirmYes');
       const no = document.getElementById('confirmNo');
       yes.addEventListener('click', () => closeConfirm(true));
       no.addEventListener('click', () => closeConfirm(false));
+      document.getElementById('nameOk').addEventListener('click', () => closeNameModal(true));
+      document.getElementById('nameCancel').addEventListener('click', () => closeNameModal(false));
+      document.getElementById('nameModalInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); closeNameModal(true); }
+        if (e.key === 'Escape') { e.preventDefault(); closeNameModal(false); }
+      });
       document.addEventListener('keydown', (e) => {
+        if (document.getElementById('nameModal').classList.contains('show')) {
+          if (e.key === 'Escape') { e.preventDefault(); closeNameModal(false); }
+          return;
+        }
         if (!document.getElementById('confirmModal').classList.contains('show')) return;
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
           e.preventDefault();
