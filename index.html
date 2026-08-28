@@ -147,7 +147,10 @@
       outline-offset: 2px;
     }
     label.import-btn input[type=file] {
-      position: absolute; width: 0; height: 0; opacity: 0; pointer-events: none;
+      display: block;
+      margin-top: 4px;
+      max-width: 180px;
+      color: var(--text);
     }
     button.pressed, button:active {
       background: #d8d4c8;
@@ -723,8 +726,8 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <label id="btnImportSyx" class="import-btn" tabindex="0">Import .syx
-              <input type="file" id="importSyx" accept=".syx,*" multiple />
+            <label id="btnImportSyx" class="import-btn">Import .syx
+              <input type="file" id="importSyx" multiple />
             </label>
           </div>
           <div class="tgroup lib">
@@ -1587,9 +1590,54 @@
         }
       });
 
+      async function ingestSyxFiles(fileList) {
+        const files = Array.from(fileList || []);
+        if (!files.length) return;
+        let lastOk = 0;
+        for (const file of files) {
+          const buf = await file.arrayBuffer();
+          const bytes = new Uint8Array(buf);
+          let start = -1;
+          for (let i = 0; i < bytes.length - 5; i++) {
+            if (bytes[i] === 0xF0 && bytes[i + 1] === 0x04 && bytes[i + 2] === 0x0A && bytes[i + 3] === 0x05) {
+              start = i; break;
+            }
+          }
+          if (start < 0) { setStatus('No MuRF pattern SysEx found in ' + file.name); continue; }
+          let end = start + 4;
+          while (end < bytes.length && bytes[end] !== 0xF7) end++;
+          if (bytes[end] !== 0xF7) { setStatus('Incomplete SysEx in ' + file.name); continue; }
+          const payloadBytes = bytes.slice(start + 4, end);
+          if (payloadBytes.length !== 262) {
+            setStatus('Unexpected payload length in ' + file.name + ': ' + payloadBytes.length);
+            continue;
+          }
+          const payload = String.fromCharCode(...payloadBytes);
+          const slot = parseInt(payload.slice(4, 6), 16) || 0;
+          const frame = bytes.slice(start, end + 1);
+          const name = file.name.replace(/\.(syx|txt)$/i, '') || ('pattern-' + slot);
+          saveLibraryDump(name, frame, slot);
+          lastOk++;
+        }
+        refreshLibrarySelect();
+        setStatus(lastOk ? ('Imported ' + lastOk + ' pattern(s) into library') : 'Import failed');
+      }
+      const filesBox = document.querySelector('.tgroup.files');
+      if (filesBox) {
+        filesBox.addEventListener('dragover', (e) => { e.preventDefault(); filesBox.classList.add('pressed'); });
+        filesBox.addEventListener('dragleave', () => filesBox.classList.remove('pressed'));
+        filesBox.addEventListener('drop', async (e) => {
+          e.preventDefault();
+          filesBox.classList.remove('pressed');
+          await ingestSyxFiles(e.dataTransfer && e.dataTransfer.files);
+        });
+      }
       document.getElementById('importSyx').addEventListener('change', async (e) => {
         document.getElementById('btnImportSyx')?.classList.add('pressed');
         setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
+        await ingestSyxFiles(e.target.files);
+        e.target.value = '';
+        return;
 
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
