@@ -139,7 +139,7 @@
       background: var(--panel-2); border: 1px solid var(--border);
       cursor: pointer; color: var(--text); font: inherit;
     }
-    label.import-btn.pressed, label.import-btn:active, label.import-btn.kb-armed {
+    label.import-btn.pressed, label.import-btn:active {
       background: #d8d4c8; color: #111;
     }
     label.import-btn.kb-armed, label.import-btn:focus-visible {
@@ -310,13 +310,14 @@
     }
     .tgroup {
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 6px;
       align-items: center;
       padding: 6px 8px;
       border-radius: 6px;
       border: 1px solid var(--border);
     }
+    .tgroup.lib { flex-wrap: wrap; }
     .tgroup.edit { background: #2a2622; border-color: #5a3d28; }
     .tgroup.set { background: #22282a; border-color: #3d5558; }
     .tgroup.fit { background: #24222a; border-color: #4a3d5a; }
@@ -682,21 +683,21 @@
             <span class="tlabel">Set length</span>
             <button id="btnSelectAllBands">All bands</button>
             <button id="btnClearBandSel">Clear sel</button>
-            <button data-len="8">Set 8</button>
-            <button data-len="16">Set 16</button>
-            <button data-len="32">Set 32</button>
-            <button data-len="64">Set 64</button>
+            <button id="btnSet8" data-len="8">Set 8</button>
+            <button id="btnSet16" data-len="16">Set 16</button>
+            <button id="btnSet32" data-len="32">Set 32</button>
+            <button id="btnSet64" data-len="64">Set 64</button>
           </div>
           <div class="tgroup fit">
             <span class="tlabel">Fit</span>
-            <button data-fit="8">8</button>
-            <button data-fit="16">16</button>
-            <button data-fit="24">24</button>
-            <button data-fit="32">32</button>
-            <button data-fit="40">40</button>
-            <button data-fit="48">48</button>
-            <button data-fit="56">56</button>
-            <button data-fit="64">64</button>
+            <button id="btnFit8" data-fit="8">8</button>
+            <button id="btnFit16" data-fit="16">16</button>
+            <button id="btnFit24" data-fit="24">24</button>
+            <button id="btnFit32" data-fit="32">32</button>
+            <button id="btnFit40" data-fit="40">40</button>
+            <button id="btnFit48" data-fit="48">48</button>
+            <button id="btnFit56" data-fit="56">56</button>
+            <button id="btnFit64" data-fit="64">64</button>
           </div>
           <div class="tgroup zoom">
             <span class="tlabel">Zoom</span>
@@ -727,7 +728,6 @@
             <label id="btnImportSyx" class="import-btn">Import .syx
               <input type="file" id="importSyx" accept=".syx,*" multiple style="display:none" />
             </label>
-            <button type="button" id="btnPasteSyx">Paste SysEx</button>
           </div>
           <div class="tgroup lib">
             <span class="tlabel">Library</span>
@@ -1673,7 +1673,7 @@
         setStatus(lastOk ? ('Imported ' + lastOk + ' pattern(s) into library') : 'Import failed');
         return lastOk;
       }
-      document.getElementById('btnPasteSyx').addEventListener('click', () => {
+      document.getElementById('btnPasteSyx')?.addEventListener('click', () => {
         flashBtn('btnPasteSyx');
         const modal = document.getElementById('pasteModal');
         const ta = document.getElementById('pasteSyxText');
@@ -1681,10 +1681,10 @@
         modal.classList.add('show');
         setTimeout(() => ta.focus(), 30);
       });
-      document.getElementById('pasteSyxCancel').addEventListener('click', () => {
+      document.getElementById('pasteSyxCancel')?.addEventListener('click', () => {
         document.getElementById('pasteModal').classList.remove('show');
       });
-      document.getElementById('pasteSyxOk').addEventListener('click', () => {
+      document.getElementById('pasteSyxOk')?.addEventListener('click', () => {
         const frames = parseSyxHex(document.getElementById('pasteSyxText').value);
         document.getElementById('pasteModal').classList.remove('show');
         importSyxFrames(frames, 'pasted');
@@ -2194,7 +2194,7 @@
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
           { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand', 'btnInitPattern'] },
-          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx', 'btnPasteSyx'] },
+          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
       }
@@ -2370,6 +2370,8 @@
             const cur = currentFocusEl();
             if (cur && cur.id && cur.id !== 'patternGrid') state.lastTabId = cur.id;
             else if (cur && cur.dataset && cur.dataset.band != null) state.lastTabId = 'bandlen-' + cur.dataset.band;
+            else if (cur && cur.dataset && cur.dataset.len) state.lastTabId = 'btnSet' + cur.dataset.len;
+            else if (cur && cur.dataset && cur.dataset.fit) state.lastTabId = 'btnFit' + cur.dataset.fit;
             commitIfValueBox(cur);
             focusGrid();
             return;
