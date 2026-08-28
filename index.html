@@ -93,6 +93,15 @@
       min-height: 36px;
       min-width: 44px;
     }
+    button:focus-visible,
+    select:focus-visible,
+    input:focus-visible {
+      outline: 2px solid #6ea8ff;
+      outline-offset: 2px;
+    }
+    .panel.section-focus, .tgroup.section-focus {
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45);
+    }
     button.pressed, button:active {
       background: #d8d4c8;
       color: #111;
@@ -565,7 +574,7 @@
               </div>
             </div>
             <div style="margin-top:12px">
-              <button id="btnPatternReset" class="primary">Pattern Reset (CC90)</button>
+              <button id="btnPatternReset">Pattern Reset (CC90)</button>
             </div>
           </div>
         </div>
@@ -587,7 +596,7 @@
           </label>
           <div class="tgroup edit">
             <span class="tlabel">Edit</span>
-            <button id="btnSendPattern" class="primary">Send Pattern</button>
+            <button id="btnSendPattern">Send Pattern</button>
             <button id="btnAutoSend">Auto Send: Off</button>
             <button id="btnUndo">Undo</button>
             <button id="btnRedo">Redo</button>
@@ -682,7 +691,7 @@
           </p>
           <div class="keyboard" id="keyboard"></div>
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
-            <button id="btnNoteReset" class="primary">Pattern Clock Reset (Note 65)</button>
+            <button id="btnNoteReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnNotePriority" class="on">Last-note priority: On</button>
           </div>
         </div>
@@ -1045,13 +1054,28 @@
         inp.max = 64;
         inp.value = state.pattern.bands[b].length;
         inp.dataset.band = b;
-        inp.addEventListener('change', (e) => {
-          let v = parseInt(e.target.value, 10) || 1;
+        inp.addEventListener('focus', () => inp.select());
+        const applyLen = () => {
+          let v = parseInt(inp.value, 10) || 1;
           v = Math.max(1, Math.min(64, v));
           state.pattern.bands[b].length = v;
-          e.target.value = v;
-          buildGrid();
+          inp.value = v;
+          persistSession();
           maybeAutoSend();
+          const ae = document.activeElement;
+          buildGrid();
+          const again = document.querySelector('#bandMeta input[data-band="' + b + '"]');
+          if (ae === inp && again) { again.focus(); again.select(); }
+        };
+        inp.addEventListener('change', applyLen);
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); applyLen(); inp.select(); }
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const d = e.key === 'ArrowUp' ? 1 : -1;
+            inp.value = Math.max(1, Math.min(64, (parseInt(inp.value, 10) || 1) + d));
+            applyLen();
+          }
         });
         lab.appendChild(inp);
         wrap.appendChild(lab);
@@ -1184,9 +1208,17 @@
           sl.value = v;
           sendCC(parseInt(sl.dataset.cc, 10), v);
         };
+        inp.addEventListener('focus', () => inp.select());
         inp.addEventListener('change', applyNum);
         inp.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); applyNum(); inp.blur(); }
+          if (e.key === 'Enter') { e.preventDefault(); applyNum(); inp.select(); }
+          if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const d = e.key === 'ArrowUp' ? 1 : -1;
+            inp.value = Math.max(0, Math.min(127, (parseInt(inp.value, 10) || 0) + d));
+            applyNum();
+            inp.select();
+          }
         });
       }
 
@@ -1230,6 +1262,7 @@
 
       document.getElementById('btnPatternReset').addEventListener('click', () => {
         sendCC(90, 127);
+        flashBtn('btnPatternReset');
         setStatus('Pattern Reset (CC90)');
       });
     }
@@ -1249,24 +1282,41 @@
         maybeAutoSend();
       });
 
-      document.getElementById('patternLfo').addEventListener('change', (e) => {
-        let v = parseInt(e.target.value, 10) || 0;
+      const lfoBox = document.getElementById('patternLfo');
+      const applyLfo = () => {
+        let v = parseInt(lfoBox.value, 10) || 0;
         v = Math.max(0, Math.min(255, v));
         state.pattern.lfo = v;
-        e.target.value = v;
+        lfoBox.value = v;
         maybeAutoSend();
+      };
+      lfoBox.addEventListener('focus', () => lfoBox.select());
+      lfoBox.addEventListener('change', applyLfo);
+      lfoBox.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); applyLfo(); lfoBox.select(); }
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          e.preventDefault();
+          const d = e.key === 'ArrowUp' ? 1 : -1;
+          lfoBox.value = Math.max(0, Math.min(255, (parseInt(lfoBox.value, 10) || 0) + d));
+          applyLfo();
+          lfoBox.select();
+        }
       });
 
-      document.getElementById('btnSendPattern').addEventListener('click', sendCurrentPattern);
+      document.getElementById('btnSendPattern').addEventListener('click', () => {
+        flashBtn('btnSendPattern');
+        sendCurrentPattern();
+      });
 
       document.getElementById('btnAutoSend').addEventListener('click', (e) => {
         state.autoSend = !state.autoSend;
         e.target.textContent = 'Auto Send: ' + (state.autoSend ? 'On' : 'Off');
-        e.target.classList.toggle('primary', state.autoSend);
+        e.target.classList.toggle('on', state.autoSend);
         if (state.autoSend) sendCurrentPattern();
       });
 
       document.getElementById('btnClearAll').addEventListener('click', () => {
+        flashBtn('btnClearAll');
         pushUndo();
         state.pattern.bands.forEach(b => b.steps.clear());
         buildGrid();
@@ -1275,6 +1325,7 @@
       });
 
       document.getElementById('btnInvert').addEventListener('click', () => {
+        flashBtn('btnInvert');
         pushUndo();
         state.pattern.bands.forEach(band => {
           const next = new Set();
@@ -1288,6 +1339,7 @@
       });
 
       document.getElementById('btnFlip').addEventListener('click', () => {
+        flashBtn('btnFlip');
         pushUndo();
         state.pattern.bands.reverse();
         buildGrid();
@@ -1341,8 +1393,8 @@
       window.addEventListener('resize', () => fitVisibleSteps(state.visibleSteps));
       setTimeout(() => fitVisibleSteps(state.visibleSteps), 50);
 
-      document.getElementById('btnUndo').addEventListener('click', undo);
-      document.getElementById('btnRedo').addEventListener('click', redo);
+      document.getElementById('btnUndo').addEventListener('click', () => { flashBtn('btnUndo'); undo(); });
+      document.getElementById('btnRedo').addEventListener('click', () => { flashBtn('btnRedo'); redo(); });
       document.getElementById('btnCopyBand').addEventListener('click', () => {
         const src = state.selectedBands.length ? state.selectedBands : [0];
         state.bandClipboard = src.map(i => ({
@@ -1626,6 +1678,7 @@
       });
 
       document.getElementById('btnNoteReset').addEventListener('click', () => {
+        flashBtn('btnNoteReset');
         sendNoteOn(65, 100);
         setTimeout(() => sendNoteOff(65), 50);
         setStatus('Note 65 — Pattern clock reset');
@@ -1887,12 +1940,95 @@
       });
     }
 
+    function pageSections() {
+      const tab = activeTab();
+      if (tab === 'main') {
+        return [
+          { box: null, els: ['midiPort', 'midiChannel'] },
+          { box: document.querySelector('#view-main .panel'), els: ['pcPattern', 'togFreq', 'togLfo', 'togBypass', 'togStaccato', 'togClockSync'] },
+          { box: document.querySelectorAll('#view-main .panel')[1], els: () => [
+            ...[...document.querySelectorAll('#view-main .panel .cc-slider, #view-main .panel .value-input')],
+            document.getElementById('btnPatternReset')
+          ].filter(Boolean) },
+          { box: document.querySelector('#view-main .panel:last-of-type'), els: () => [...document.querySelectorAll('#filterLevels .cc-slider, #filterLevels .value-input')] }
+        ];
+      }
+      if (tab === 'pattern') {
+        return [
+          { box: null, els: ['patternSlot', 'patternLfo'] },
+          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
+          { box: document.querySelector('.tgroup.set'), els: () => [document.getElementById('btnSelectAllBands'), document.getElementById('btnClearBandSel'), ...document.querySelectorAll('.tgroup.set [data-len]')] },
+          { box: document.querySelector('.tgroup.fit'), els: () => [...document.querySelectorAll('.tgroup.fit [data-fit]')] },
+          { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
+          { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
+          { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand'] },
+          { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
+        ];
+      }
+      return [
+        { box: document.querySelector('#view-keyboard .panel'), els: () => [...document.querySelectorAll('[data-mode]'), document.getElementById('btnNoteReset'), document.getElementById('btnNotePriority')] }
+      ];
+    }
+
+    function resolveEls(sec) {
+      if (typeof sec.els === 'function') return sec.els().filter(Boolean);
+      return sec.els.map(id => document.getElementById(id)).filter(Boolean);
+    }
+
+    function flattenFocus() {
+      return pageSections().flatMap(resolveEls);
+    }
+
+    function markSectionFor(el) {
+      document.querySelectorAll('.section-focus').forEach(n => n.classList.remove('section-focus'));
+      const sec = pageSections().find(s => resolveEls(s).includes(el));
+      if (sec && sec.box) sec.box.classList.add('section-focus');
+    }
+
+    function focusControl(el) {
+      if (!el) return;
+      el.focus();
+      if (el.tagName === 'INPUT' && (el.type === 'number' || el.type === 'search' || el.type === 'text')) el.select();
+      markSectionFor(el);
+    }
+
+    function controlInFocus() {
+      const el = document.activeElement;
+      if (!el || el === document.body || el.id === 'patternGrid') return false;
+      const tag = el.tagName;
+      return tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || tag === 'BUTTON';
+    }
+
+    function focusGrid() {
+      const g = document.getElementById('patternGrid');
+      if (g) { g.setAttribute('tabindex', '-1'); g.focus(); }
+      document.querySelectorAll('.section-focus').forEach(n => n.classList.remove('section-focus'));
+    }
+
     // ---------- Boot ----------
     function initShortcuts() {
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Tab') {
           e.preventDefault();
-          cycleAppTab(e.shiftKey ? -1 : 1);
+          if (e.altKey) {
+            const secs = pageSections();
+            if (!secs.length) return;
+            let si = secs.findIndex(s => resolveEls(s).includes(document.activeElement));
+            if (si < 0) si = e.shiftKey ? 0 : -1;
+            si = (si + (e.shiftKey ? -1 : 1) + secs.length) % secs.length;
+            const first = resolveEls(secs[si])[0];
+            focusControl(first);
+            return;
+          }
+          if (e.shiftKey) {
+            cycleAppTab(1);
+            return;
+          }
+          const list = flattenFocus();
+          if (!list.length) return;
+          const i = list.indexOf(document.activeElement);
+          const next = list[(i < 0 ? 0 : i + 1) % list.length];
+          focusControl(next);
           return;
         }
         const tag = (e.target && e.target.tagName) || '';
@@ -1908,11 +2044,39 @@
           document.getElementById('btnClearAll')?.click();
           return;
         }
+        if ((e.metaKey || e.ctrlKey) && k === 's') {
+          e.preventDefault();
+          document.getElementById('btnSaveLibrary')?.click();
+          flashBtn('btnSaveLibrary');
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'c') {
+          e.preventDefault();
+          if (e.shiftKey) document.getElementById('btnCopyPattern')?.click();
+          else document.getElementById('btnCopyBand')?.click();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'v') {
+          e.preventDefault();
+          if (e.shiftKey) document.getElementById('btnPastePattern')?.click();
+          else document.getElementById('btnPasteBand')?.click();
+          return;
+        }
         if (k === 'b') document.getElementById('togBypass')?.click();
         else if (k === 'l') document.getElementById('togLfo')?.click();
         else if (k === 'm') document.getElementById('togFreq')?.click();
         else if (k === 's') document.getElementById('togStaccato')?.click();
-        else if (k === 'p') sendCurrentPattern();
+        else if (k === 'p') {
+          flashBtn('btnSendPattern');
+          sendCurrentPattern();
+        }
+        else if (k === 'a') document.getElementById('btnAutoSend')?.click();
+        else if (k === 'i') document.getElementById('btnInvert')?.click();
+        else if (k === 'f') document.getElementById('btnFlip')?.click();
+        else if (k === 'g') {
+          if (activeTab() === 'pattern') focusGrid();
+          else document.activeElement?.blur();
+        }
         else if (k === 'z') {
           document.getElementById('btnGlobalPatternReset')?.click();
           flashBtn('btnGlobalPatternReset');
@@ -1952,6 +2116,7 @@
           buildGrid();
         }
         else if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+          if (controlInFocus()) return;
           e.preventDefault();
           if (activeTab() === 'keyboard' && !e.shiftKey && !e.altKey && !e.metaKey && !e.ctrlKey &&
               (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
@@ -1970,7 +2135,15 @@
           if (typeof state.focusedBand !== 'number') {
             state.focusedBand = state.selectedBands[state.selectedBands.length - 1] ?? 0;
           }
-          if (alt && dirH) {
+          if (alt && shift && dirH) {
+            pushUndo();
+            const targets = state.selectedBands.length ? state.selectedBands : [state.focusedBand];
+            const lens = targets.map(i => state.pattern.bands[i].length);
+            const dest = dirH < 0 ? Math.min(...lens) : Math.max(...lens);
+            targets.forEach(i => { state.pattern.bands[i].length = dest; });
+            persistSession();
+            maybeAutoSend();
+          } else if (alt && dirH) {
             pushUndo();
             const targets = state.selectedBands.length ? state.selectedBands : [state.focusedBand];
             targets.forEach(i => {
