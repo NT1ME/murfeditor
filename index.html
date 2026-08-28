@@ -111,17 +111,21 @@
       box-shadow: inset 0 0 0 1px rgba(255,255,255,0.45);
     }
 
-    label.import-btn {
-      display: inline-flex; align-items: center;
+    .import-wrap {
+      position: relative; display: inline-flex; align-items: center;
+      vertical-align: middle;
+    }
+    .import-fake {
       padding: 6px 10px; border-radius: 4px;
       background: var(--panel-2); border: 1px solid var(--border);
-      cursor: pointer; color: var(--text); font: inherit;
+      color: var(--text); pointer-events: none; user-select: none;
     }
-    label.import-btn.pressed, label.import-btn:active {
+    .import-wrap.pressed .import-fake, .import-wrap:active .import-fake {
       background: #d8d4c8; color: #111;
     }
-    label.import-btn input[type=file] {
-      position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden;
+    .import-real {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+      opacity: 0; cursor: pointer; font-size: 48px;
     }
 
     button.pressed, button:active {
@@ -698,9 +702,10 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <label id="btnImportSyx" tabindex="0" class="import-btn">Import .syx
-              <input type="file" id="importSyx" accept=".syx,.SYX,*/*" multiple tabindex="-1" />
-            </label>
+            <span id="btnImportSyx" class="import-wrap">
+              <span class="import-fake">Import .syx</span>
+              <input type="file" id="importSyx" class="import-real" accept=".syx,.SYX,*/*" multiple />
+            </span>
           </div>
           <div class="tgroup lib">
             <span class="tlabel">Library</span>
@@ -1562,8 +1567,15 @@
         }
       });
 
-      document.getElementById('importSyx').addEventListener('change', async (e) => {
-        flashBtn('btnImportSyx');
+      const importWrap = document.getElementById('btnImportSyx');
+      const importInp = document.getElementById('importSyx');
+      const flashImport = () => {
+        importWrap?.classList.add('pressed');
+        setTimeout(() => importWrap?.classList.remove('pressed'), 220);
+      };
+      importInp.addEventListener('pointerdown', flashImport);
+      importInp.addEventListener('change', async (e) => {
+        flashImport();
         const files = Array.from(e.target.files || []);
         if (!files.length) return;
         let lastOk = 0;
@@ -2062,7 +2074,7 @@
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
           { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand', 'btnInitPattern'] },
-          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
+          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'importSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
       }
@@ -2309,9 +2321,14 @@
           }
           return;
         }
-        if (state.armedEl && e.key === 'Enter' && state.armedEl.tagName !== 'INPUT') {
+        if (state.armedEl && e.key === 'Enter' && state.armedEl.tagName !== 'INPUT' && state.armedEl.id !== 'importSyx') {
           e.preventDefault();
           state.armedEl.click();
+          return;
+        }
+        if ((e.target && e.target.id === 'importSyx') && e.key === 'Enter') {
+          document.getElementById('btnImportSyx')?.classList.add('pressed');
+          setTimeout(() => document.getElementById('btnImportSyx')?.classList.remove('pressed'), 220);
           return;
         }
         const tag = (e.target && e.target.tagName) || '';
