@@ -985,19 +985,26 @@
         const freq = BAND_FREQ_TOP_TO_BOTTOM[b];
         label.textContent = 'B' + (b + 1) + '\n' + freq[0] + '\n' + freq[1];
         label.title = 'Bass ' + freq[0] + ' / Mids ' + freq[1] + ' — tap to select, tap again to add/remove';
-        label.addEventListener('click', () => {
-          const already = state.selectedBands.includes(b);
-          if (already) {
-            if (state.selectedBands.length > 1) {
-              state.selectedBands = state.selectedBands.filter(x => x !== b);
+        label.addEventListener('click', (ev) => {
+          if (ev.shiftKey) {
+            const already = state.selectedBands.includes(b);
+            if (already) {
+              if (state.selectedBands.length > 1) {
+                state.selectedBands = state.selectedBands.filter(x => x !== b);
+              }
+            } else {
+              state.selectedBands.push(b);
             }
-          } else if (state.selectedBands.length <= 1) {
-            state.selectedBands = [b];
+            if (!state.selectedBands.includes(state.focusedBand)) {
+              const near = state.selectedBands.slice().sort((a,c) => Math.abs(a - b) - Math.abs(c - b))[0];
+              state.focusedBand = near ?? 0;
+            }
+            state.bandAnchor = state.focusedBand;
           } else {
-            state.selectedBands.push(b);
+            state.selectedBands = [b];
+            state.focusedBand = b;
+            state.bandAnchor = b;
           }
-          state.focusedBand = b;
-          state.bandAnchor = state.selectedBands.length === 1 ? b : state.bandAnchor;
           buildGrid();
         });
         grid.appendChild(label);
@@ -1365,8 +1372,9 @@
         buildGrid();
       });
       document.getElementById('btnClearBandSel').addEventListener('click', () => {
-        state.selectedBands = [0];
+        collapseSelection();
         buildGrid();
+        setStatus('Selection collapsed to caret');
       });
 
       document.getElementById('btnCopyPattern').addEventListener('click', () => {
@@ -1849,20 +1857,44 @@
     }
 
     // ---------- Tabs ----------
+    function showTab(name) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+      document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    }
+
+    function cycleAppTab(dir) {
+      const order = ['main', 'pattern', 'keyboard'];
+      const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
+      let i = order.indexOf(cur);
+      if (i < 0) i = 0;
+      showTab(order[(i + dir + order.length) % order.length]);
+    }
+
+    function collapseSelection() {
+      const fb = typeof state.focusedBand === 'number' ? state.focusedBand : 0;
+      const fs = state.focusedStep || 1;
+      state.focusedBand = fb;
+      state.focusedStep = fs;
+      state.selectedBands = [fb];
+      state.selectedSteps = [fs];
+      state.bandAnchor = fb;
+      state.stepAnchor = fs;
+    }
+
     function initTabs() {
       document.querySelectorAll('.tab').forEach(tab => {
-        tab.addEventListener('click', () => {
-          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-          document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-          tab.classList.add('active');
-          document.getElementById('view-' + tab.dataset.tab).classList.add('active');
-        });
+        tab.addEventListener('click', () => showTab(tab.dataset.tab));
       });
     }
 
     // ---------- Boot ----------
     function initShortcuts() {
       document.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          cycleAppTab(e.shiftKey ? -1 : 1);
+          return;
+        }
         const tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
         const k = e.key.toLowerCase();
@@ -1893,11 +1925,8 @@
           document.getElementById('btnStopPattern')?.click();
           flashBtn('btnStopPattern');
         }
-        else if (k === 'escape') {
-          state.selectedBands = [state.focusedBand];
-          state.selectedSteps = [state.focusedStep];
-          state.bandAnchor = state.focusedBand;
-          state.stepAnchor = state.focusedStep;
+        else if (k === 'escape' || k === 'u') {
+          collapseSelection();
           buildGrid();
         }
         else if (k === 'o') {
@@ -1935,12 +1964,22 @@
           }
           const cmd = e.metaKey || e.ctrlKey;
           const shift = e.shiftKey;
+          const alt = e.altKey;
           const dirV = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
           const dirH = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
           if (typeof state.focusedBand !== 'number') {
             state.focusedBand = state.selectedBands[state.selectedBands.length - 1] ?? 0;
           }
-          if (cmd && dirV) {
+          if (alt && dirH) {
+            pushUndo();
+            const targets = state.selectedBands.length ? state.selectedBands : [state.focusedBand];
+            targets.forEach(i => {
+              const band = state.pattern.bands[i];
+              band.length = Math.max(1, Math.min(64, band.length + dirH));
+            });
+            persistSession();
+            maybeAutoSend();
+          } else if (cmd && dirV) {
             const src = state.selectedBands.slice();
             const blocked = dirV > 0 ? Math.max(...src) >= 7 : Math.min(...src) <= 0;
             if (!blocked) {
