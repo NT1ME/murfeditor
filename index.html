@@ -657,7 +657,7 @@
             <span class="tlabel">Files</span>
             <button id="btnExportSyx">Export Current .syx</button>
             <button id="btnExportLibrary">Export Library Item</button>
-            <label class="primary" style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:4px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer">
+            <label id="btnImportSyx" class="primary" style="display:inline-flex;align-items:center;padding:6px 10px;border-radius:4px;background:var(--panel-2);border:1px solid var(--border);cursor:pointer">
               Import .syx
               <input type="file" id="importSyx" accept=".syx,*" multiple style="display:none" />
             </label>
@@ -1064,27 +1064,33 @@
         inp.max = 64;
         inp.value = state.pattern.bands[b].length;
         inp.dataset.band = b;
-        inp.addEventListener('focus', () => inp.select());
-        const applyLen = () => {
+        inp.addEventListener('focus', () => {
+          inp.select();
+          state.armedEl = inp;
+          inp.classList.add('kb-armed');
+        });
+        const applyLen = (rebuild) => {
           let v = parseInt(inp.value, 10) || 1;
           v = Math.max(1, Math.min(64, v));
           state.pattern.bands[b].length = v;
           inp.value = v;
           persistSession();
           maybeAutoSend();
-          const ae = document.activeElement;
-          buildGrid();
-          const again = document.querySelector('#bandMeta input[data-band="' + b + '"]');
-          if (ae === inp && again) { again.focus(); again.select(); }
+          if (rebuild !== false) buildGrid();
         };
-        inp.addEventListener('change', applyLen);
+        inp.addEventListener('change', () => applyLen(false));
         inp.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); applyLen(); inp.select(); }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            applyLen(true);
+            inp.blur();
+            clearArmed();
+          }
           if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
             e.preventDefault();
             const d = e.key === 'ArrowUp' ? 1 : -1;
             inp.value = Math.max(1, Math.min(64, (parseInt(inp.value, 10) || 1) + d));
-            applyLen();
+            applyLen(false);
           }
         });
         lab.appendChild(inp);
@@ -1972,6 +1978,7 @@
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
           { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand'] },
+          { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
       }
@@ -2004,8 +2011,18 @@
       return state.armedEl || document.activeElement;
     }
 
+    function commitIfValueBox(el) {
+      if (!el || el.tagName !== 'INPUT') return;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
     function focusControl(el) {
       if (!el) return;
+      const prev = currentFocusEl();
+      if (prev && prev !== el) {
+        commitIfValueBox(prev);
+        try { prev.blur(); } catch (err) {}
+      }
       clearArmed();
       el.classList.add('kb-armed');
       state.armedEl = el;
@@ -2035,6 +2052,21 @@
     // ---------- Boot ----------
     function initShortcuts() {
       document.addEventListener('keydown', (e) => {
+        if (e.key === '`' || e.code === 'Backquote') {
+          e.preventDefault();
+          cycleAppTab(e.shiftKey ? -1 : 1);
+          clearArmed();
+          return;
+        }
+        if (e.key === 'g' || e.key === 'G') {
+          if (e.metaKey || e.ctrlKey || e.altKey) { /* fall through */ }
+          else {
+            e.preventDefault();
+            commitIfValueBox(currentFocusEl());
+            focusGrid();
+            return;
+          }
+        }
         if (e.key === 'Tab') {
           e.preventDefault();
           if (e.ctrlKey || e.metaKey) {
