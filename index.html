@@ -320,7 +320,13 @@
     }
     .grid-label.corner { color: #fff; font-weight: 700; letter-spacing: 0.02em; }
     .grid-label .freq { color: #f2f2f0; font-weight: 400; }
-    .grid-label.band { cursor: pointer; font-weight: 700; }
+    .grid-label.band {
+      cursor: pointer; font-weight: 700;
+      flex-direction: column; align-items: center; justify-content: center;
+      min-height: 52px; gap: 1px;
+    }
+    .grid-label.band .bname { font-weight: 700; line-height: 1.2; }
+    .grid-label.band .freq { color: #f2f2f0; font-weight: 400; line-height: 1.15; }
     .grid-label.band.selected { outline: 1px solid #fff; }
     .grid-label.band0, .band-meta label.band0 { color: var(--b1); font-weight: 700; }
     .grid-label.band1, .band-meta label.band1 { color: var(--b2); font-weight: 700; }
@@ -1046,7 +1052,7 @@
         const label = document.createElement('div');
         label.className = 'grid-label band band' + b + (state.selectedBands.includes(b) ? ' selected' : '');
         const freq = BAND_FREQ_TOP_TO_BOTTOM[b];
-        label.innerHTML = 'Band ' + (b + 1) + '<span class="freq">\n' + freq[0] + '\n' + freq[1] + '</span>';
+        label.innerHTML = '<span class="bname">Band ' + (b + 1) + '</span><span class="freq">' + freq[0] + '</span><span class="freq">' + freq[1] + '</span>';
         label.title = 'Bass ' + freq[0] + ' / Mids ' + freq[1] + ' — tap to select, tap again to add/remove';
         label.addEventListener('click', (ev) => {
           if (ev.shiftKey) {
@@ -2171,7 +2177,14 @@
 
     // ---------- Boot ----------
     function initShortcuts() {
+      function isTextEntry(el) {
+        if (!el) return false;
+        const tag = el.tagName || '';
+        const ttype = el.type || '';
+        return tag === 'TEXTAREA' || (tag === 'INPUT' && (ttype === 'text' || ttype === 'search' || el.id === 'nameModalInput'));
+      }
       document.addEventListener('keydown', (e) => {
+        if (isTextEntry(e.target) && e.key !== 'Tab' && !(e.metaKey || e.ctrlKey)) return;
         if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
           e.preventDefault();
           if (e.shiftKey) {
@@ -2255,10 +2268,12 @@
           return;
         }
         const tag = (e.target && e.target.tagName) || '';
+        const ttype = (e.target && e.target.type) || '';
+        const textField = tag === 'TEXTAREA' || (tag === 'INPUT' && (ttype === 'text' || ttype === 'search' || e.target.id === 'nameModalInput'));
+        if (textField) return;
         const typingKey = e.key === 'Backspace' || e.key === 'Delete' || e.key === 'Enter' ||
           e.key.startsWith('Arrow') || e.key === '.' || /^[0-9]$/.test(e.key);
         if (tag === 'INPUT' && typingKey) return;
-        if (tag === 'TEXTAREA') return;
         const k = e.key.toLowerCase();
         if ((e.metaKey || e.ctrlKey) && k === 'z') {
           e.preventDefault();
