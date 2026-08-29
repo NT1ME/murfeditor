@@ -2500,18 +2500,20 @@
           else document.getElementById('btnPasteBand')?.click();
           return;
         }
-        if (k === ',' || k === '.') {
-          if (activeTab() === 'pattern' && !controlInFocus()) {
-            e.preventDefault();
-            pushUndo();
-            const targets = state.selectedBands.length ? state.selectedBands : [state.focusedBand ?? 0];
-            const lens = targets.map(i => state.pattern.bands[i].length);
-            const dest = k === ',' ? Math.min(...lens) : Math.max(...lens);
-            targets.forEach(i => { state.pattern.bands[i].length = dest; });
-            persistSession();
-            maybeAutoSend();
-            buildGrid();
-          }
+        if (k === ',' || k === '.' || e.code === 'Comma' || e.code === 'Period') {
+          const tag = (e.target && e.target.tagName) || '';
+          if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+          if (activeTab() !== 'pattern') return;
+          e.preventDefault();
+          pushUndo();
+          const targets = (state.selectedBands && state.selectedBands.length) ? state.selectedBands : [state.focusedBand ?? 0];
+          const lens = targets.map(i => state.pattern.bands[i].length);
+          const dest = (k === ',' || e.code === 'Comma') ? Math.min(...lens) : Math.max(...lens);
+          targets.forEach(i => { state.pattern.bands[i].length = dest; });
+          persistSession();
+          maybeAutoSend();
+          buildGrid();
+          setStatus((k === ',' || e.code === 'Comma') ? 'Lengths → shortest' : 'Lengths → longest');
           return;
         }
         if (k === 'b') document.getElementById('togBypass')?.click();
