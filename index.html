@@ -2573,11 +2573,12 @@
           if (typeof state.focusedBand !== 'number') {
             state.focusedBand = state.selectedBands[state.selectedBands.length - 1] ?? 0;
           }
-          if (alt && shift && dirH) {
+          if (alt && shift && (dirH || dirV)) {
             pushUndo();
             const targets = state.selectedBands.length ? state.selectedBands : [state.focusedBand];
             const lens = targets.map(i => state.pattern.bands[i].length);
-            const dest = dirH < 0 ? Math.min(...lens) : Math.max(...lens);
+            const shrink = dirH < 0 || dirV < 0;
+            const dest = shrink ? Math.min(...lens) : Math.max(...lens);
             targets.forEach(i => { state.pattern.bands[i].length = dest; });
             persistSession();
             maybeAutoSend();
