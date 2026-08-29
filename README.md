@@ -3,10 +3,10 @@
 
 Control surface for the MF-105M. No sound engine. Sends CC, PC, notes, and pattern SysEx.
 
-Live URL: https://nt1me.github.io/murfeditor/ in MIDIWeb Browser.
-After a deploy: force-quit MIDIWeb, reopen, then load the page. Refresh is not enough.
+Live: https://nt1me.github.io/murfeditor/ in MIDIWeb Browser.
+After a deploy: force-quit MIDIWeb, reopen, then load. Refresh is not enough.
 
-MIDI channel defaults to 1. Pick the port. Hit Refresh if the box was plugged in late.
+MIDI channel defaults to 1. Pick the port. Refresh the port list if the box was plugged in late.
 
 ---
 
@@ -19,17 +19,17 @@ Main · Pattern · Keyboard
 | ` (backtick) | Next page |
 | Shift+` | Previous page |
 
-Pattern Reset, Clock Reset, and Stop are on every page.
+Pattern Reset, Clock Reset, and Stop sit on every page.
 
 ---
 
-## Focus (no mouse)
+## Focus
 
 | Key | Action |
 |-----|--------|
 | Tab / Shift+Tab | Next / previous control on this page |
 | Option+Tab / Option+Shift+Tab | Next / previous section |
-| G | Jump to the grid (remembers the control you were on) |
+| G | Jump to the grid (remembers the control you left) |
 | Tab from the grid | Return to that control |
 
 Number boxes only use 0-9, Backspace, Enter, and arrows. Letter commands still run.
@@ -37,7 +37,7 @@ Library Search and the Save-name box swallow letters until you leave them.
 
 ---
 
-## Always-on commands
+## Always-on
 
 | Key | Action |
 |-----|--------|
@@ -54,13 +54,14 @@ Library Search and the Save-name box swallow letters until you leave them.
 | Cmd+X | Clear all steps |
 | I | Invert |
 | F | Flip bands |
-| U | Collapse selection to the caret (Escape does the same on a full keyboard) |
+| U | Collapse selection to the caret |
 
 ---
 
 ## Grid
 
 Eight bands, independent lengths 1-64. Band 1 is the top row.
+Pattern Slot on this page is 2-12 Bass and 14-24 Mids (1 and 13 are EQ on the hardware).
 
 ### Bands
 
@@ -71,22 +72,22 @@ Eight bands, independent lengths 1-64. Band 1 is the top row.
 | Click band label | Select that band |
 | Shift-click band label | Add or remove without moving the caret |
 
-### Steps
+### Steps and length
 
 | Key | Action |
 |-----|--------|
 | Left / Right | Move the caret |
 | Shift+Left / Shift+Right | Grow or shrink a step range (does not write) |
-| Option+Left / Option+Right | Shorten or lengthen selected bands |
-| , (comma) | Selected bands → shortest length |
-| . (period) | Selected bands → longest length |
+| Option+Left / Option+Right | Shorten or lengthen selected bands by one |
+| , (comma) | Match shortest length |
+| . (period) | Match longest length |
 | Cmd+Left / Cmd+Right | Slide the step range |
 | Cmd+Up / Cmd+Down | Slide the band set, keep spacing |
 | O | Toggle selected steps on selected bands |
 
-Arrows move. O writes.
+Comma / period: one band selected = that band jumps to the shortest or longest length **on the whole grid**. Two or more selected = the group matches **its own** shortest or longest.
 
-### Pointer
+Arrows move. O writes.
 
 Tap a cell in range to toggle. Drag the end grip to change length.
 Fit 8 / 16 / 24 / 32 / 40 / 48 / 56 / 64. Zoom - / +.
@@ -119,8 +120,7 @@ Save Current to Library uses an in-app name box.
 Delete All asks Yes/No (arrows + Enter). iCloud files stay put.
 
 Local storage is disposable. Keep .syx files in iCloud and Import when you sit down.
-
-Send as = destination slot (Bass 2-12, Mids 14-24). Slots 1 and 13 are EQ.
+Send as = destination slot (2-12 / 14-24).
 
 ---
 
@@ -129,6 +129,7 @@ Send as = destination slot (Bass 2-12, Mids 14-24). Slots 1 and 13 are EQ.
 Sliders plus typed integers 0-127: Drive, Output, Mix, Envelope, Envelope Scale, Rate, LFO Sweep, eight band levels.
 Up/Down on the number box. Left/Right on the slider.
 Band levels are labeled in Hertz for Bass and Mids. Moving a band level stops the pattern clock (hardware).
+Program change on Main still lists slots 1 and 13 so you can put the box in EQ mode.
 
 ---
 
@@ -154,7 +155,7 @@ Last-note priority is a toggle. Slide-finger legato stays on.
 2. Port, channel.
 3. ` to Pattern.
 4. Init or Load.
-5. Fit, set lengths, Shift-select, O.
+5. Fit, set lengths, Shift-select, O. Comma / period to snap lengths.
 6. P (or Auto Send).
 7. Z / C / X from any page.
 
