@@ -2506,14 +2506,18 @@
           if (activeTab() !== 'pattern') return;
           e.preventDefault();
           pushUndo();
-          const targets = (state.selectedBands && state.selectedBands.length) ? state.selectedBands : [state.focusedBand ?? 0];
-          const lens = targets.map(i => state.pattern.bands[i].length);
-          const dest = (k === ',' || e.code === 'Comma') ? Math.min(...lens) : Math.max(...lens);
+          const one = !(state.selectedBands && state.selectedBands.length > 1);
+          const targets = one
+            ? [state.focusedBand ?? state.selectedBands[0] ?? 0]
+            : state.selectedBands;
+          const lensSrc = one ? state.pattern.bands.map(b => b.length) : targets.map(i => state.pattern.bands[i].length);
+          const dest = (k === ',' || e.code === 'Comma') ? Math.min(...lensSrc) : Math.max(...lensSrc);
           targets.forEach(i => { state.pattern.bands[i].length = dest; });
           persistSession();
           maybeAutoSend();
-          buildGrid();
-          setStatus((k === ',' || e.code === 'Comma') ? 'Lengths → shortest' : 'Lengths → longest');
+          renderGridCells();
+          buildBandMeta();
+          setStatus((k === ',' || e.code === 'Comma') ? 'Lengths → shortest (' + dest + ')' : 'Lengths → longest (' + dest + ')');
           return;
         }
         if (k === 'b') document.getElementById('togBypass')?.click();
