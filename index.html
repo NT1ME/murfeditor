@@ -2500,6 +2500,20 @@
           else document.getElementById('btnPasteBand')?.click();
           return;
         }
+        if (k === ',' || k === '.') {
+          if (activeTab() === 'pattern' && !controlInFocus()) {
+            e.preventDefault();
+            pushUndo();
+            const targets = state.selectedBands.length ? state.selectedBands : [state.focusedBand ?? 0];
+            const lens = targets.map(i => state.pattern.bands[i].length);
+            const dest = k === ',' ? Math.min(...lens) : Math.max(...lens);
+            targets.forEach(i => { state.pattern.bands[i].length = dest; });
+            persistSession();
+            maybeAutoSend();
+            buildGrid();
+          }
+          return;
+        }
         if (k === 'b') document.getElementById('togBypass')?.click();
         else if (k === 'l') document.getElementById('togLfo')?.click();
         else if (k === 'm') document.getElementById('togFreq')?.click();
