@@ -2368,11 +2368,46 @@
       localStorage.setItem(LIBRARY_KEY, JSON.stringify(lib));
     }
 
+
+    function snapshotPanel() {
+      const panel = {};
+      document.querySelectorAll('[data-cc]').forEach(el => {
+        const cc = String(el.dataset.cc);
+        if (el.tagName === 'INPUT') panel[cc] = parseInt(el.value, 10) || 0;
+        else panel[cc] = el.classList.contains('on') ? 127 : 0;
+      });
+      panel.channel = state.channel;
+      return panel;
+    }
+    function applyPanel(panel) {
+      if (!panel) return;
+      if (panel.channel) {
+        state.channel = panel.channel;
+        const sel = document.getElementById('midiChannel');
+        if (sel) sel.value = String(panel.channel);
+      }
+      document.querySelectorAll('[data-cc]').forEach(el => {
+        const cc = String(el.dataset.cc);
+        if (panel[cc] == null) return;
+        const v = panel[cc] | 0;
+        if (el.tagName === 'INPUT') {
+          el.value = v;
+          const pair = el.parentElement && el.parentElement.querySelectorAll('input');
+          if (pair && pair.length === 2) {
+            pair[0].value = v; pair[1].value = v;
+          }
+        } else {
+          el.classList.toggle('on', v >= 64);
+        }
+        if (typeof sendCC === 'function') sendCC(parseInt(cc, 10), el.tagName === 'INPUT' ? v : (v >= 64 ? 127 : 0));
+      });
+    }
+
     function saveLibraryDump(name, bytes, slot) {
       const lib = loadLibrary();
       let hex = '';
       for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, '0');
-      lib[name] = { hex, slot: slot || state.pattern.slot };
+      lib[name] = { hex, slot: slot || state.pattern.slot, panel: snapshotPanel() };
       writeLibrary(lib);
     }
 
@@ -2457,6 +2492,7 @@
         for (let i = 4; i < bytes.length - 1; i++) payload += String.fromCharCode(bytes[i]);
         applyPayloadToGrid(payload, sendAs);
       }
+      applyPanel(item.panel);
       persistSession();
       setStatus('Loaded to grid: ' + name + ' (slot ' + sendAs + ', not sent)');
     }
