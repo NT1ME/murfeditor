@@ -478,6 +478,15 @@
     }
 
     /* Keyboard */
+
+    .stack-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+    }
+    .stack-row > span {
+      width: 84px; flex-shrink: 0; font-size: 11px; color: var(--text-dim); text-transform: uppercase;
+    }
+    .stack-row .keyboard { flex: 1; }
+
     .keyboard {
       display: flex;
       justify-content: center;
@@ -574,6 +583,7 @@
       <button class="tab active" data-tab="main">Main</button>
       <button class="tab" data-tab="pattern">Pattern</button>
       <button class="tab" data-tab="keyboard">Keyboard</button>
+      <button class="tab" data-tab="stack">Stack</button>
     </div>
 
     <main>
@@ -811,6 +821,22 @@
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button id="btnNoteReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnNotePriority" class="on">Last-note priority: On</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="view" id="view-stack">
+        <div class="panel">
+          <h2>Stack</h2>
+          <p style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
+            All three modes at once. Computer: 1–8 mute · Q–I triggered · A–K sustained. Z C X stay transport.
+          </p>
+          <div class="stack-row"><span>Mute</span><div class="keyboard" id="stackMute"></div></div>
+          <div class="stack-row"><span>Triggered</span><div class="keyboard" id="stackTrig"></div></div>
+          <div class="stack-row"><span>Sustained</span><div class="keyboard" id="stackSus"></div></div>
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <button id="btnStackReset">Pattern Clock Reset (Note 65)</button>
+            <button id="btnStackPriority" class="on">Last-note priority: On</button>
           </div>
         </div>
       </div>
@@ -2066,6 +2092,176 @@
       renderKeys();
     }
 
+
+    const PERF_KEY_ROWS = {
+      mute:      '12345678',
+      triggered: 'qwertyui',
+      sustained: 'asdfghjk'
+    };
+    const perfHeld = new Map();
+
+    function perfNoteForKey(k) {
+      const tab = activeTab();
+      if (tab === 'keyboard') {
+        if (state.perfMode === 'step') return k === 'a' ? 108 : null;
+        const row = PERF_KEY_ROWS[state.perfMode];
+        if (!row) return null;
+        const idx = row.indexOf(k);
+        if (idx < 0) return null;
+        return (NOTE_MAPS[state.perfMode] || [])[idx];
+      }
+      if (tab === 'stack') {
+        for (const mode of ['mute', 'triggered', 'sustained']) {
+          const idx = PERF_KEY_ROWS[mode].indexOf(k);
+          if (idx >= 0) return { note: NOTE_MAPS[mode][idx], mode, idx };
+        }
+      }
+      return null;
+    }
+
+    function initStack() {
+      function paint(id, mode) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.innerHTML = '';
+        NOTE_MAPS[mode].forEach((note, i) => {
+          const key = document.createElement('div');
+          key.className = 'key band' + (7 - i);
+          key.textContent = noteName(note);
+          key.dataset.note = note;
+          key.dataset.mode = mode;
+          el.appendChild(key);
+        });
+      }
+      paint('stackMute', 'mute');
+      paint('stackTrig', 'triggered');
+      paint('stackSus', 'sustained');
+
+      const stacks = { mute: [], triggered: [], sustained: [] };
+      function top(mode) { const s = stacks[mode]; return s.length ? s[s.length - 1] : null; }
+      function vis() {
+        document.querySelectorAll('#view-stack .key').forEach(k => k.classList.remove('active'));
+        ['mute','triggered','sustained'].forEach(mode => {
+          stacks[mode].forEach(note => {
+            const el = document.querySelector('#view-stack .key[data-mode="' + mode + '"][data-note="' + note + '"]');
+            if (el) el.classList.add('active');
+          });
+        });
+      }
+      function rowOn(mode, note) {
+        const s = stacks[mode];
+        const prev = top(mode);
+        stacks[mode] = s.filter(n => n !== note);
+        stacks[mode].push(note);
+        if (state.notePriority && prev !== null && prev !== note) sendNoteOff(prev);
+        sendNoteOn(note, 100);
+        vis();
+      }
+      function rowOff(mode, note) {
+        const prev = top(mode);
+        stacks[mode] = stacks[mode].filter(n => n !== note);
+        if (prev === note) {
+          sendNoteOff(note);
+          const n = top(mode);
+          if (n !== null && state.notePriority) sendNoteOn(n, 100);
+        }
+        vis();
+      }
+
+      function bindRow(id, mode) {
+        const root = document.getElementById(id);
+        let pid = null, cur = null;
+        root.addEventListener('pointerdown', (e) => {
+          const key = e.target.closest('.key');
+          if (!key) return;
+          e.preventDefault();
+          root.setPointerCapture(e.pointerId);
+          pid = e.pointerId;
+          cur = parseInt(key.dataset.note, 10);
+          rowOn(mode, cur);
+        });
+        root.addEventListener('pointermove', (e) => {
+          if (pid !== e.pointerId) return;
+          const el = document.elementFromPoint(e.clientX, e.clientY);
+          if (!el || !root.contains(el) || !el.classList.contains('key')) return;
+          const n = parseInt(el.dataset.note, 10);
+          if (n === cur) return;
+          if (cur !== null) rowOff(mode, cur);
+          cur = n;
+          rowOn(mode, n);
+        });
+        const up = (e) => {
+          if (pid !== e.pointerId) return;
+          if (cur !== null) rowOff(mode, cur);
+          cur = null; pid = null;
+        };
+        root.addEventListener('pointerup', up);
+        root.addEventListener('pointercancel', up);
+      }
+      bindRow('stackMute', 'mute');
+      bindRow('stackTrig', 'triggered');
+      bindRow('stackSus', 'sustained');
+
+      document.getElementById('btnStackReset')?.addEventListener('click', () => {
+        flashBtn('btnStackReset');
+        sendNoteOn(65, 100);
+        setTimeout(() => sendNoteOff(65), 50);
+      });
+      document.getElementById('btnStackPriority')?.addEventListener('click', () => {
+        state.notePriority = !state.notePriority;
+        ['btnNotePriority','btnStackPriority'].forEach(id => {
+          const b = document.getElementById(id);
+          if (!b) return;
+          b.classList.toggle('on', state.notePriority);
+          b.textContent = 'Last-note priority: ' + (state.notePriority ? 'On' : 'Off');
+        });
+      });
+    }
+
+    function initPerfComputerKeys() {
+      function down(e) {
+        if (e.metaKey || e.ctrlKey || e.repeat) return;
+        const tab = activeTab();
+        if (tab !== 'keyboard' && tab !== 'stack') return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        const k = (e.key || '').toLowerCase();
+        if ('zcx'.includes(k) && k.length === 1) return;
+        let note = null, mode = null;
+        if (tab === 'keyboard') {
+          if (state.perfMode === 'step') {
+            if (k !== 'a') return;
+            note = 108;
+          } else {
+            const row = 'asdfghjk';
+            if (row.indexOf(k) < 0) return;
+            note = NOTE_MAPS[state.perfMode][row.indexOf(k)];
+          }
+        } else {
+          for (const m of ['mute', 'triggered', 'sustained']) {
+            const idx = PERF_KEY_ROWS[m].indexOf(k);
+            if (idx >= 0) { note = NOTE_MAPS[m][idx]; mode = m; break; }
+          }
+        }
+        if (note == null) return;
+        e.preventDefault();
+        if (perfHeld.has(k)) return;
+        perfHeld.set(k, note);
+        sendNoteOn(note, 100);
+        document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.add('active'));
+      }
+      function up(e) {
+        const k = (e.key || '').toLowerCase();
+        if (!perfHeld.has(k)) return;
+        const note = perfHeld.get(k);
+        perfHeld.delete(k);
+        sendNoteOff(note);
+        document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.remove('active'));
+      }
+      document.addEventListener('keydown', down);
+      document.addEventListener('keyup', up);
+    }
+
     function setPerfMode(mode) {
       const btn = document.querySelector('[data-mode="' + mode + '"]');
       if (btn) btn.click();
@@ -2297,7 +2493,7 @@
     }
 
     function cycleAppTab(dir) {
-      const order = ['main', 'pattern', 'keyboard'];
+      const order = ['main', 'pattern', 'keyboard', 'stack'];
       const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
       let i = order.indexOf(cur);
       if (i < 0) i = 0;
@@ -2800,7 +2996,7 @@
           flashBtn('btnSendPattern');
           sendCurrentPattern();
         }
-        else if (k === 'a') document.getElementById('btnAutoSend')?.click();
+        else if (k === 'a' && activeTab() !== 'keyboard' && activeTab() !== 'stack') document.getElementById('btnAutoSend')?.click();
         else if (k === 'i') document.getElementById('btnInvert')?.click();
         else if (k === 'f') document.getElementById('btnFlip')?.click();
         else if (k === 'g') {
@@ -2926,6 +3122,8 @@
       initPatternToolbar();
       buildGrid();
       initKeyboard();
+      initStack();
+      initPerfComputerKeys();
       initGlobalResets();
       initFactoryPresets();
       initConfirm();
