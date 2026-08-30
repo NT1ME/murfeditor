@@ -720,6 +720,7 @@
             <span class="tlabel">Edit</span>
             <button id="btnSendPattern">Send Pattern</button>
             <button id="btnAutoSend">Auto Send: Off</button>
+            <button id="btnSeqWrite">Seq write: Off</button>
             <button id="btnUndo">Undo</button>
             <button id="btnRedo">Redo</button>
             <button id="btnClearAll">Clear All</button>
@@ -895,6 +896,7 @@
       output: null,
       channel: 1, // 1-16
       autoSend: false,
+      seqWrite: false,
       pattern: {
         slot: 12,          // 1-24
         lfo: 0,            // 0-255
@@ -1506,7 +1508,25 @@
         sendCurrentPattern();
       });
 
+      
+      document.getElementById('btnSeqWrite').addEventListener('click', () => {
+        state.seqWrite = !state.seqWrite;
+        const b = document.getElementById('btnSeqWrite');
+        b.textContent = 'Seq write: ' + (state.seqWrite ? 'On' : 'Off');
+        b.classList.toggle('on', state.seqWrite);
+        if (state.seqWrite && state.autoSend) {
+          state.autoSend = false;
+          const a = document.getElementById('btnAutoSend');
+          if (a) { a.textContent = 'Auto Send: Off'; a.classList.remove('on'); }
+        }
+        setStatus(state.seqWrite ? 'Seq write on — Q W E R T Y H J stamp, Space next' : 'Seq write off');
+      });
+
       document.getElementById('btnAutoSend').addEventListener('click', (e) => {
+        if (state.seqWrite && !state.autoSend) {
+          setStatus('Seq write is on — Auto Send stays off');
+          return;
+        }
         state.autoSend = !state.autoSend;
         e.target.textContent = 'Auto Send: ' + (state.autoSend ? 'On' : 'Off');
         e.target.classList.toggle('on', state.autoSend);
@@ -2545,7 +2565,7 @@
       if (tab === 'pattern') {
         return [
           { box: null, els: ['patternSlot', 'patternLfo'] },
-          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
+          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnSeqWrite', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
           { box: document.querySelector('.tgroup.set'), els: () => [document.getElementById('btnSelectAllBands'), document.getElementById('btnClearBandSel'), ...document.querySelectorAll('.tgroup.set [data-len]')] },
           { box: document.querySelector('.tgroup.fit'), els: () => [...document.querySelectorAll('.tgroup.fit [data-fit]')] },
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
@@ -2999,6 +3019,35 @@
           buildBandMeta();
           setStatus((k === ',' || e.code === 'Comma') ? 'Lengths → shortest (' + dest + ')' : 'Lengths → longest (' + dest + ')');
           return;
+        }
+        if (k === 'n') {
+          document.getElementById('btnSeqWrite')?.click();
+          return;
+        }
+        if (state.seqWrite && activeTab() === 'pattern') {
+          const stamp = 'qwertyhj';
+          if (stamp.includes(k)) {
+            e.preventDefault();
+            const band = stamp.indexOf(k);
+            const step = state.focusedStep || 1;
+            pushUndo();
+            const b = state.pattern.bands[band];
+            b.steps.add(step);
+            if (step > b.length) b.length = step;
+            persistSession();
+            renderGridCells();
+            buildBandMeta();
+            setStatus('Seq band ' + (band + 1) + ' @ ' + step);
+            return;
+          }
+          if (e.code === 'Space') {
+            e.preventDefault();
+            state.focusedStep = Math.min(64, (state.focusedStep || 1) + 1);
+            state.selectedSteps = [state.focusedStep];
+            state.stepAnchor = state.focusedStep;
+            buildGrid();
+            return;
+          }
         }
         if (k === 'b') document.getElementById('togBypass')?.click();
         else if (k === 'l') document.getElementById('togLfo')?.click();
