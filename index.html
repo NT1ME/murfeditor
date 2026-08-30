@@ -582,11 +582,18 @@
     <header>
       <h1>MIDI MuRF Editor</h1>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button id="btnGlobalPatternReset" title="CC90 — reset pattern to step 1">Pattern Reset</button>
-        <button id="btnGlobalClockReset" title="Note 65 — restart / resync pattern clock">Clock Reset</button>
-        <button type="button" id="btnMapMode" title="Map digits 1-0 to buttons">Map</button>
-        <button type="button" id="btnHelpHints" title="Hold for key hints">?</button>
-        <button id="btnStopPattern" title="Stop pattern clock (Note 108)">Stop</button>
+        <button id="btnClockArm" title="Arm MIDI clock (no F8 until on)">Clock</button>
+        <button id="btnPlay" title="Enter — MIDI Start">Play</button>
+        <button id="btnContinue" title="Shift+Enter — MIDI Continue">Cont</button>
+        <button id="btnClockStop" title="Shift+Space — MIDI Stop">Stop</button>
+        <button id="btnRecord" title="\ — arm / punch out">Rec</button>
+        <button id="btnPlayClip" title="Play clip over current pattern">Play clip</button>
+        <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
+        <select id="divSelect" title="Clock division (CC9)"></select>
+        <button id="btnGlobalPatternReset" title="CC90">Pat Reset</button>
+        <button id="btnGlobalClockReset" title="Note 65">Clk Reset</button>
+        <button type="button" id="btnMapMode">Map</button>
+        <button type="button" id="btnHelpHints">?</button>
       </div>
       <div class="midi-status">
         <span id="midiLabel">MIDI: disconnected</span>
@@ -603,6 +610,7 @@
       <button class="tab" data-tab="pattern">Pattern</button>
       <button class="tab" data-tab="keyboard">Keyboard</button>
       <button class="tab" data-tab="stack">Stack</button>
+      <button class="tab" data-tab="clock">Clock</button>
     </div>
 
     <main>
@@ -862,6 +870,27 @@
           </div>
         </div>
       </div>
+
+      <div class="view" id="view-clock">
+        <div class="panel">
+          <h2>Clock / Clips</h2>
+          <p style="color:var(--text-dim);font-size:12px">Arm clock, set BPM and division, then Play. Rec arm + Play writes notes and transport. Play clip runs a take on top of the current pattern.</p>
+          <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+            <span id="clockReadout">—</span>
+            <button type="button" id="btnTapTempo">Tap</button>
+          </div>
+          <div class="row" style="gap:8px;align-items:center;margin-bottom:8px">
+            <label>Clips
+              <select id="clipSelect" style="min-width:180px"><option value="">— clips —</option></select>
+            </label>
+            <button type="button" id="btnSaveClip">Save take</button>
+            <button type="button" id="btnLoadClip">Load</button>
+            <button type="button" id="btnDeleteClip">Delete clip</button>
+            <label>Clip BPM <input id="clipBpmBox" type="number" min="20" max="300" value="120" style="width:56px"></label>
+          </div>
+        </div>
+      </div>
+
     </main>
 
     <div class="status-bar" id="status">Ready</div>
@@ -908,6 +937,11 @@
       autoSend: false,
       seqWrite: false,
       latch: false,
+      clock: {
+        armed: false, running: false, recArm: false, recording: false, playClip: false,
+        bpm: 120, div: 10, tick: 0, timer: null, lastTap: 0, taps: [],
+        take: [], clip: null, clips: {}
+      },
       pattern: {
         slot: 12,          // 1-24
         lfo: 0,            // 0-255
@@ -1083,6 +1117,7 @@
     }
 
     function sendCC(cc, value) {
+      if (state.clock && state.clock.recording && (cc === 90)) recordEvent({ kind: 'cc', cc: 90, val: value | 0 });
       if (!state.output) return;
       const v = Math.max(0, Math.min(127, value | 0));
       state.output.send([0xB0 | midiChannelByte(), cc & 0x7F, v]);
@@ -1097,12 +1132,14 @@
     }
 
     function sendNoteOn(note, vel = 100) {
+      if (state.clock && state.clock.recording) recordEvent({ kind: 'on', note: note & 0x7F, vel: vel & 0x7F });
       if (!state.output) return;
       state.output.send([0x90 | midiChannelByte(), note & 0x7F, vel & 0x7F]);
       flashMidi();
     }
 
     function sendNoteOff(note) {
+      if (state.clock && state.clock.recording) recordEvent({ kind: 'off', note: note & 0x7F });
       if (!state.output) return;
       state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
     }
@@ -2074,7 +2111,7 @@
         });
       }
 
-      const isMono = () => state.notePriority && (state.perfMode === 'sustained' || state.perfMode === 'triggered');
+      const isMono = () => state.notePriority && state.perfMode === 'triggered';
 
       kb.addEventListener('pointerdown', (e) => {
         e.preventDefault();
@@ -2208,7 +2245,7 @@
         const prev = top(mode);
         stacks[mode] = s.filter(n => n !== note);
         stacks[mode].push(note);
-        if (state.notePriority && prev !== null && prev !== note) sendNoteOff(prev);
+        if (state.notePriority && mode === 'triggered' && prev !== null && prev !== note) sendNoteOff(prev);
         sendNoteOn(note, 100);
         vis();
       }
@@ -2225,30 +2262,41 @@
 
       function bindRow(id, mode) {
         const root = document.getElementById(id);
-        let pid = null, cur = null;
+        const held = new Map();
         root.addEventListener('pointerdown', (e) => {
           const key = e.target.closest('.key');
           if (!key) return;
           e.preventDefault();
           root.setPointerCapture(e.pointerId);
-          pid = e.pointerId;
-          cur = parseInt(key.dataset.note, 10);
-          rowOn(mode, cur);
+          const n = parseInt(key.dataset.note, 10);
+          const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+          if (canLatch && perfLatched.has(n)) { releaseNote(n); return; }
+          stealBand(n);
+          held.set(e.pointerId, n);
+          rowOn(mode, n);
+          if (canLatch) perfLatched.add(n);
         });
         root.addEventListener('pointermove', (e) => {
-          if (pid !== e.pointerId) return;
+          if (!held.has(e.pointerId)) return;
           const el = document.elementFromPoint(e.clientX, e.clientY);
           if (!el || !root.contains(el) || !el.classList.contains('key')) return;
           const n = parseInt(el.dataset.note, 10);
+          const cur = held.get(e.pointerId);
           if (n === cur) return;
-          if (cur !== null) rowOff(mode, cur);
-          cur = n;
+          const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+          if (!canLatch) rowOff(mode, cur);
+          stealBand(n);
+          held.set(e.pointerId, n);
           rowOn(mode, n);
+          if (canLatch) perfLatched.add(n);
         });
         const up = (e) => {
-          if (pid !== e.pointerId) return;
-          if (cur !== null) rowOff(mode, cur);
-          cur = null; pid = null;
+          if (!held.has(e.pointerId)) return;
+          const n = held.get(e.pointerId);
+          held.delete(e.pointerId);
+          const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+          if (canLatch && perfLatched.has(n)) return;
+          rowOff(mode, n);
         };
         root.addEventListener('pointerup', up);
         root.addEventListener('pointercancel', up);
@@ -2407,12 +2455,6 @@
         sendNoteOn(65, 100);
         setTimeout(() => sendNoteOff(65), 50);
         setStatus('Clock Reset (Note 65)');
-      });
-      document.getElementById('btnStopPattern').addEventListener('click', () => {
-        // Note 108 = Step mode: stops the free-running pattern clock
-        sendNoteOn(108, 100);
-        setTimeout(() => sendNoteOff(108), 50);
-        setStatus('Pattern clock stopped (Note 108)');
       });
     }
 
@@ -2637,7 +2679,7 @@
     }
 
     function cycleAppTab(dir) {
-      const order = ['main', 'pattern', 'keyboard', 'stack'];
+      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock'];
       const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
       let i = order.indexOf(cur);
       if (i < 0) i = 0;
@@ -2843,7 +2885,7 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnStopPattern: 'X',
+        btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', 
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
       };
@@ -2905,6 +2947,221 @@
       });
     }
 
+
+    const CLOCK_DIVS = [
+      { name: '4 bars', cc: 3, ticks: 384 },
+      { name: '3 bars', cc: 9, ticks: 288 },
+      { name: '2 bars', cc: 16, ticks: 192 },
+      { name: 'dotted whole', cc: 22, ticks: 144 },
+      { name: 'whole', cc: 29, ticks: 96 },
+      { name: 'dotted half', cc: 35, ticks: 72 },
+      { name: 'whole triplet', cc: 41, ticks: 64 },
+      { name: 'half', cc: 48, ticks: 48 },
+      { name: 'dotted quarter', cc: 54, ticks: 36 },
+      { name: 'half triplet', cc: 61, ticks: 32 },
+      { name: 'quarter', cc: 67, ticks: 24 },
+      { name: 'dotted 8th', cc: 73, ticks: 18 },
+      { name: 'quarter triplet', cc: 80, ticks: 16 },
+      { name: '8th', cc: 86, ticks: 12 },
+      { name: 'dotted 16th', cc: 93, ticks: 9 },
+      { name: '16th', cc: 99, ticks: 6 },
+      { name: 'dotted 32nd', cc: 105, ticks: 4 },
+      { name: '32nd', cc: 112, ticks: 3 },
+      { name: 'dotted 64th', cc: 118, ticks: 2 },
+      { name: '64th', cc: 124, ticks: 1 }
+    ];
+
+    function recordEvent(ev) {
+      const c = state.clock;
+      if (!c.recording) return;
+      if (c.take.length >= 10000) { punchOut(); setStatus('Clip hit 10k events'); return; }
+      ev.t = c.tick;
+      c.take.push(ev);
+    }
+    function sendRT(b) {
+      if (state.output) { try { state.output.send([b]); flashMidi(); } catch (e) {} }
+    }
+    function longestBand() {
+      return Math.max(...state.pattern.bands.map(b => b.length || 1));
+    }
+    function updateClockReadout() {
+      const c = state.clock;
+      const d = CLOCK_DIVS[c.div] || CLOCK_DIVS[15];
+      const steps = longestBand();
+      const q = (steps * d.ticks) / 24;
+      const bars = q / 4;
+      const el = document.getElementById('clockReadout');
+      if (el) el.textContent = steps + ' steps × ' + d.name + ' = ' + (Number.isInteger(bars) ? bars : bars.toFixed(2)) + ' bars @ ' + c.bpm;
+      const arm = document.getElementById('btnClockArm');
+      if (arm) { arm.classList.toggle('on', c.armed); arm.textContent = c.armed ? 'Clock: On' : 'Clock'; }
+      const rec = document.getElementById('btnRecord');
+      if (rec) { rec.classList.toggle('on', c.recArm || c.recording); rec.textContent = c.recording ? 'REC' : (c.recArm ? 'Arm' : 'Rec'); }
+      const pc = document.getElementById('btnPlayClip');
+      if (pc) pc.classList.toggle('on', c.playClip);
+      const pl = document.getElementById('btnPlay');
+      if (pl) pl.classList.toggle('on', c.running);
+    }
+    function applyDivision() {
+      const d = CLOCK_DIVS[state.clock.div];
+      if (d) sendCC(9, d.cc);
+      updateClockReadout();
+    }
+    function clockTick() {
+      const c = state.clock;
+      if (!c.running) return;
+      c.tick++;
+      if (c.armed && state.output) {
+        try { state.output.send([0xF8]); } catch (e) {}
+      }
+      if (c.playClip && c.clip && c.clip.events) {
+        const evs = c.clip.events.filter(e => e.t === c.tick);
+        evs.forEach(playClipEvent);
+      }
+      if (c.recording && c.tick > 24 * c.bpm * 10) punchOut();
+    }
+    function playClipEvent(ev) {
+      if (ev.kind === 'on') { if (state.output) state.output.send([0x90 | midiChannelByte(), ev.note, ev.vel || 100]); }
+      else if (ev.kind === 'off') { if (state.output) state.output.send([0x80 | midiChannelByte(), ev.note, 0]); }
+      else if (ev.kind === 'start') sendRT(0xFA);
+      else if (ev.kind === 'cont') sendRT(0xFB);
+      else if (ev.kind === 'stop') sendRT(0xFC);
+      else if (ev.kind === 'cc') sendCC(ev.cc, ev.val);
+    }
+    function startTimer() {
+      stopTimer();
+      const ms = 60000 / state.clock.bpm / 24;
+      state.clock.timer = setInterval(clockTick, Math.max(4, ms));
+    }
+    function stopTimer() {
+      if (state.clock.timer) { clearInterval(state.clock.timer); state.clock.timer = null; }
+    }
+    function clockPlay(fromStart) {
+      const c = state.clock;
+      c.running = true;
+      if (fromStart) c.tick = 0;
+      if (c.recArm && !c.recording) { c.recording = true; c.take = []; recordEvent({ kind: fromStart ? 'start' : 'cont' }); }
+      if (fromStart) sendRT(0xFA); else sendRT(0xFB);
+      if (c.recording) recordEvent({ kind: fromStart ? 'start' : 'cont' });
+      startTimer();
+      updateClockReadout();
+      setStatus(fromStart ? 'Play' : 'Continue');
+    }
+    function clockStopDevice() {
+      const c = state.clock;
+      sendRT(0xFC);
+      if (c.recording) recordEvent({ kind: 'stop' });
+      c.running = false;
+      stopTimer();
+      updateClockReadout();
+      setStatus('Clock stop');
+    }
+    function punchOut() {
+      const c = state.clock;
+      if (!c.recording) { c.recArm = !c.recArm; updateClockReadout(); setStatus(c.recArm ? 'Rec armed' : 'Rec off'); return; }
+      c.recording = false; c.recArm = false;
+      c.clip = { bpm: c.bpm, events: c.take.slice() };
+      updateClockReadout();
+      setStatus('Take in memory — Save take on Clock tab (' + c.clip.events.length + ' events)');
+    }
+    function loadClockClips() {
+      try { state.clock.clips = JSON.parse(localStorage.getItem('murf-clips') || '{}'); } catch (e) { state.clock.clips = {}; }
+    }
+    function writeClockClips() {
+      localStorage.setItem('murf-clips', JSON.stringify(state.clock.clips));
+    }
+    function refreshClipSelect() {
+      const sel = document.getElementById('clipSelect');
+      if (!sel) return;
+      const keep = sel.value;
+      sel.innerHTML = '<option value="">— clips —</option>';
+      Object.keys(state.clock.clips).sort().forEach(n => {
+        const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o);
+      });
+      if (keep) sel.value = keep;
+    }
+
+    function initClock() {
+      loadClockClips();
+      const sel = document.getElementById('divSelect');
+      if (sel && !sel.options.length) {
+        CLOCK_DIVS.forEach((d, i) => {
+          const o = document.createElement('option');
+          o.value = i; o.textContent = d.name;
+          sel.appendChild(o);
+        });
+        sel.value = '15';
+        state.clock.div = 15;
+      }
+      sel?.addEventListener('change', () => { state.clock.div = parseInt(sel.value, 10); applyDivision(); });
+      document.getElementById('bpmBox')?.addEventListener('change', e => {
+        state.clock.bpm = Math.max(20, Math.min(300, parseInt(e.target.value, 10) || 120));
+        if (state.clock.running) startTimer();
+        updateClockReadout();
+      });
+      document.getElementById('btnClockArm')?.addEventListener('click', () => {
+        state.clock.armed = !state.clock.armed;
+        updateClockReadout();
+      });
+      document.getElementById('btnPlay')?.addEventListener('click', () => clockPlay(true));
+      document.getElementById('btnContinue')?.addEventListener('click', () => clockPlay(false));
+      document.getElementById('btnClockStop')?.addEventListener('click', clockStopDevice);
+      document.getElementById('btnRecord')?.addEventListener('click', punchOut);
+      document.getElementById('btnPlayClip')?.addEventListener('click', () => {
+        state.clock.playClip = !state.clock.playClip;
+        updateClockReadout();
+        setStatus('Play clip ' + (state.clock.playClip ? 'on' : 'off'));
+      });
+      document.getElementById('btnTapTempo')?.addEventListener('click', () => {
+        const now = performance.now();
+        const c = state.clock;
+        if (now - c.lastTap > 2000) c.taps = [];
+        c.taps.push(now); c.lastTap = now;
+        if (c.taps.length >= 2) {
+          const spans = [];
+          for (let i = 1; i < c.taps.length; i++) spans.push(c.taps[i] - c.taps[i - 1]);
+          const avg = spans.reduce((a,b)=>a+b,0) / spans.length;
+          c.bpm = Math.max(20, Math.min(300, Math.round(60000 / avg)));
+          const box = document.getElementById('bpmBox');
+          if (box) box.value = c.bpm;
+          if (c.running) startTimer();
+          updateClockReadout();
+        }
+      });
+      document.getElementById('btnSaveClip')?.addEventListener('click', () => {
+        if (!state.clock.clip) { setStatus('No take to save'); return; }
+        openNameModal('clip', name => {
+          state.clock.clips[name] = state.clock.clip;
+          writeClockClips();
+          refreshClipSelect();
+          document.getElementById('clipSelect').value = name;
+          setStatus('Saved clip ' + name);
+        });
+      });
+      document.getElementById('btnLoadClip')?.addEventListener('click', () => {
+        const name = document.getElementById('clipSelect').value;
+        const clip = name && state.clock.clips[name];
+        if (!clip) { setStatus('Pick a clip'); return; }
+        state.clock.clip = clip;
+        const box = document.getElementById('clipBpmBox');
+        if (box) box.value = clip.bpm || state.clock.bpm;
+        setStatus('Loaded clip ' + name + ' (recorded @ ' + (clip.bpm || '?') + ')');
+      });
+      document.getElementById('clipBpmBox')?.addEventListener('change', e => {
+        if (!state.clock.clip) return;
+        state.clock.clip.bpm = Math.max(20, Math.min(300, parseInt(e.target.value, 10) || 120));
+      });
+      document.getElementById('btnDeleteClip')?.addEventListener('click', () => {
+        const name = document.getElementById('clipSelect').value;
+        if (!name) return;
+        delete state.clock.clips[name];
+        writeClockClips();
+        refreshClipSelect();
+        setStatus('Deleted clip ' + name);
+      });
+      refreshClipSelect();
+      updateClockReadout();
+    }
+
     function initShortcuts() {
       function isTextEntry(el) {
         if (!el) return false;
@@ -2928,11 +3185,15 @@
           return;
         }
         if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[0-9]$/.test(e.key)) {
-          const id = loadDigitMap()[e.key];
-          if (id) {
-            e.preventDefault();
-            document.getElementById(id)?.click();
-            return;
+          const tab = activeTab();
+          if (tab === 'stack' || tab === 'keyboard') { /* digits are notes / unused */ }
+          else {
+            const id = loadDigitMap()[e.key];
+            if (id) {
+              e.preventDefault();
+              document.getElementById(id)?.click();
+              return;
+            }
           }
         }
         if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
@@ -3331,6 +3592,7 @@
       });
       initShortcuts();
       initMapAndHelp();
+      initClock();
       initMIDI().then(() => {
         if (saved && saved.portId) {
           const sel = document.getElementById('midiPort');
