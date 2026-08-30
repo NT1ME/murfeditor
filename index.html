@@ -326,16 +326,33 @@
     .pattern-toolbar {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 10px;
-      align-items: center;
+      gap: 4px 6px;
+      margin-bottom: 8px;
+      align-items: flex-start;
     }
+    #view-pattern .tgroup {
+      flex-wrap: wrap;
+      max-width: 100%;
+    }
+    #view-pattern .tgroup button,
+    #view-pattern .tgroup select,
+    #view-pattern .tgroup input,
+    #view-pattern .tgroup label {
+      font-size: 11px;
+    }
+    #view-pattern .tgroup button {
+      padding: 3px 7px;
+    }
+    #clockCluster {
+      max-width: 100%;
+    }
+    #clockCluster button { padding: 4px 8px; font-size: 12px; }
     .tgroup {
       display: flex;
-      flex-wrap: nowrap;
-      gap: 6px;
+      flex-wrap: wrap;
+      gap: 4px;
       align-items: center;
-      padding: 6px 8px;
+      padding: 4px 6px;
       border-radius: 6px;
       border: 1px solid var(--border);
     }
