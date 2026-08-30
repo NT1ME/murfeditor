@@ -150,6 +150,28 @@
       display: inline-flex; align-items: center; white-space: nowrap;
     }
     label.import-btn input { display: none !important; }
+    body.show-hints [data-kbd]::after {
+      content: attr(data-kbd);
+      display: block;
+      font-size: 9px;
+      opacity: 0.65;
+      letter-spacing: 0.04em;
+      margin-top: 1px;
+    }
+    #gridHint {
+      display: none;
+      font-size: 11px;
+      opacity: 0.7;
+      margin: 6px 0 0;
+      letter-spacing: 0.02em;
+    }
+    body.show-hints #gridHint { display: block; }
+    button.map-pick { outline: 2px solid #6ea8ff; }
+    button.on-map {
+      background: #c4b48a !important;
+      color: #111 !important;
+      box-shadow: 0 0 0 2px #e8d9a0;
+    }
     button.pressed, button:active {
       background: #d8d4c8;
       color: #111;
@@ -534,6 +556,8 @@
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button id="btnGlobalPatternReset" title="CC90 — reset pattern to step 1">Pattern Reset</button>
         <button id="btnGlobalClockReset" title="Note 65 — restart / resync pattern clock">Clock Reset</button>
+        <button type="button" id="btnMapMode" title="Map digits 1-0 to buttons">Map</button>
+        <button type="button" id="btnHelpHints" title="Hold for key hints">?</button>
         <button id="btnStopPattern" title="Stop pattern clock (Note 108)">Stop</button>
       </div>
       <div class="midi-status">
@@ -687,7 +711,11 @@
             <button id="btnClearBandSel">Clear sel</button>
             <button id="btnSet8" data-len="8">Set 8</button>
             <button id="btnSet16" data-len="16">Set 16</button>
+            <button id="btnSet24" data-len="24">Set 24</button>
             <button id="btnSet32" data-len="32">Set 32</button>
+            <button id="btnSet40" data-len="40">Set 40</button>
+            <button id="btnSet48" data-len="48">Set 48</button>
+            <button id="btnSet56" data-len="56">Set 56</button>
             <button id="btnSet64" data-len="64">Set 64</button>
           </div>
           <div class="tgroup fit">
@@ -711,6 +739,7 @@
         <div class="grid-wrap">
           <div class="grid" id="patternGrid"></div>
         </div>
+        <div id="gridHint">↑↓ band · ←→ step · ⇧ range · ⌥ length · ⌘ slide · [ ] ±8 · [ ] ends · ; ' jump 8 · O write · , . snap</div>
 
         <div class="band-meta" id="bandMeta"></div>
 
@@ -2458,6 +2487,76 @@
     }
 
     // ---------- Boot ----------
+
+    function loadDigitMap() {
+      try { return JSON.parse(localStorage.getItem('murf-digits') || '{}'); } catch (e) { return {}; }
+    }
+    function writeDigitMap(obj) {
+      localStorage.setItem('murf-digits', JSON.stringify(obj));
+    }
+    function applyKbdHints() {
+      const factory = {
+        btnSendPattern: 'P', btnAutoSend: 'A', btnUndo: '⌘Z', btnRedo: '⌘⇧Z',
+        btnClearAll: '⌘X', btnInvert: 'I', btnFlip: 'F',
+        btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnStopPattern: 'X',
+        btnZoomOut: '−', btnZoomIn: '+',
+        togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
+      };
+      const map = loadDigitMap();
+      const inv = {};
+      Object.keys(map).forEach(d => { inv[map[d]] = (inv[map[d]] ? inv[map[d]] + ' ' : '') + d; });
+      document.querySelectorAll('[data-kbd]').forEach(el => el.removeAttribute('data-kbd'));
+      Object.keys(factory).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('data-kbd', factory[id] + (inv[id] ? ' · ' + inv[id] : ''));
+      });
+      Object.keys(inv).forEach(id => {
+        if (factory[id]) return;
+        const el = document.getElementById(id);
+        if (el) el.setAttribute('data-kbd', inv[id]);
+      });
+    }
+    function initMapAndHelp() {
+      applyKbdHints();
+      const mapBtn = document.getElementById('btnMapMode');
+      const helpBtn = document.getElementById('btnHelpHints');
+      mapBtn?.addEventListener('click', () => {
+        state.mapMode = !state.mapMode;
+        state.mapTarget = null;
+        mapBtn.classList.toggle('on', !!state.mapMode);
+        mapBtn.classList.toggle('on-map', !!state.mapMode);
+        document.querySelectorAll('button.map-pick').forEach(b => b.classList.remove('map-pick'));
+        setStatus(state.mapMode ? 'Map: tap a button, then a digit 1–0' : 'Map off');
+      });
+      document.addEventListener('click', (e) => {
+        if (!state.mapMode) return;
+        const btn = e.target && e.target.closest && e.target.closest('button');
+        if (!btn || btn.id === 'btnMapMode' || btn.id === 'btnHelpHints') return;
+        if (!btn.id) return;
+        e.preventDefault();
+        e.stopPropagation();
+        document.querySelectorAll('button.map-pick').forEach(b => b.classList.remove('map-pick'));
+        btn.classList.add('map-pick');
+        state.mapTarget = btn.id;
+        setStatus('Map: now press 1–0 for ' + btn.id.replace(/^btn/, ''));
+      }, true);
+      const show = () => document.body.classList.add('show-hints');
+      const hide = () => document.body.classList.remove('show-hints');
+      helpBtn?.addEventListener('pointerdown', show);
+      helpBtn?.addEventListener('pointerup', hide);
+      helpBtn?.addEventListener('pointerleave', hide);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+          const tag = (e.target && e.target.tagName) || '';
+          if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+          document.body.classList.add('show-hints');
+        }
+      });
+      document.addEventListener('keyup', (e) => {
+        if (e.key === '?' || e.key === '/') document.body.classList.remove('show-hints');
+      });
+    }
+
     function initShortcuts() {
       function isTextEntry(el) {
         if (!el) return false;
@@ -2467,6 +2566,27 @@
       }
       document.addEventListener('keydown', (e) => {
         if (isTextEntry(e.target) && e.key !== 'Tab' && !(e.metaKey || e.ctrlKey)) return;
+        if (state.mapMode && /^[0-9]$/.test(e.key)) {
+          e.preventDefault();
+          if (state.mapTarget) {
+            const map = loadDigitMap();
+            map[e.key] = state.mapTarget;
+            writeDigitMap(map);
+            applyKbdHints();
+            setStatus('Digit ' + e.key + ' → ' + state.mapTarget);
+            state.mapTarget = null;
+            document.querySelectorAll('button.map-pick').forEach(b => b.classList.remove('map-pick'));
+          }
+          return;
+        }
+        if (!e.metaKey && !e.ctrlKey && !e.altKey && /^[0-9]$/.test(e.key)) {
+          const id = loadDigitMap()[e.key];
+          if (id) {
+            e.preventDefault();
+            document.getElementById(id)?.click();
+            return;
+          }
+        }
         if ((e.metaKey || e.ctrlKey) && (e.key === 'z' || e.key === 'Z')) {
           e.preventDefault();
           if (e.shiftKey) {
@@ -2612,6 +2732,41 @@
           e.preventDefault();
           if (e.shiftKey) document.getElementById('btnPastePattern')?.click();
           else document.getElementById('btnPasteBand')?.click();
+          return;
+        }
+        if (e.key === '-' || e.key === '_') {
+          if (activeTab() === 'pattern' && !isTextEntry(e.target)) {
+            e.preventDefault();
+            document.getElementById('btnZoomOut')?.click();
+          }
+          return;
+        }
+        if (e.key === '=' || e.key === '+') {
+          if (activeTab() === 'pattern' && !isTextEntry(e.target)) {
+            e.preventDefault();
+            document.getElementById('btnZoomIn')?.click();
+          }
+          return;
+        }
+        if (e.key === '[' || e.key === ']') {
+          if (activeTab() === 'pattern' && !isTextEntry(e.target) && !controlInFocus()) {
+            e.preventDefault();
+            state.focusedStep = e.key === '[' ? 1 : 64;
+            state.selectedSteps = [state.focusedStep];
+            state.stepAnchor = state.focusedStep;
+            buildGrid();
+          }
+          return;
+        }
+        if (e.key === ';' || e.key === ':' || e.key === "'" || e.key === '"') {
+          if (activeTab() === 'pattern' && !isTextEntry(e.target) && !controlInFocus()) {
+            e.preventDefault();
+            const d = (e.key === "'" || e.key === '"') ? 8 : -8;
+            state.focusedStep = Math.max(1, Math.min(64, (state.focusedStep || 1) + d));
+            state.selectedSteps = [state.focusedStep];
+            state.stepAnchor = state.focusedStep;
+            buildGrid();
+          }
           return;
         }
         if (k === ',' || k === '.' || e.code === 'Comma' || e.code === 'Period') {
@@ -2779,6 +2934,7 @@
         });
       });
       initShortcuts();
+      initMapAndHelp();
       initMIDI().then(() => {
         if (saved && saved.portId) {
           const sel = document.getElementById('midiPort');
