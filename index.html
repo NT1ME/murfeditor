@@ -323,6 +323,8 @@
     .tgroup.fit { background: #24222a; border-color: #4a3d5a; }
     .tgroup.zoom { background: #222; border-color: #444; }
     .tgroup.clip { background: #22261f; border-color: #4a5530; }
+    .tgroup.rowops { background: #1e2220; border-color: #3a5040; }
+    .tgroup.rowops button { padding: 4px 7px; font-size: 11px; }
     .tgroup.files { background: #1f2428; border-color: #3a4a55; }
     .tgroup.lib { background: #2a2320; border-color: #5a4030; }
     .tgroup .tlabel {
@@ -720,6 +722,18 @@
             <button id="btnCopyBand">Copy Band(s)</button>
             <button id="btnPasteBand">Paste Band(s)</button>
             <button id="btnInitPattern">Init Pattern</button>
+          </div>
+          <div class="tgroup rowops">
+            <span class="tlabel">Row</span>
+            <button id="btnClearSteps">Clr Steps</button>
+            <button id="btnInitBands">Init Row</button>
+            <button id="btnRandSteps">Rnd Steps</button>
+            <button id="btnRandLen">Rnd Len</button>
+            <button id="btnRandBoth">Rnd Both</button>
+            <button id="btnSaveRow">Save Row</button>
+            <select id="rowLibrary" style="min-width:110px"><option value="">— rows —</option></select>
+            <button id="btnLoadRow">Load Row</button>
+            <button id="btnDeleteRow">Del Row</button>
           </div>
           <div class="tgroup files">
             <span class="tlabel">Files</span>
@@ -1547,7 +1561,106 @@
         setStatus('Selection collapsed to caret');
       });
 
-            document.getElementById('btnInitPattern').addEventListener('click', () => {
+            
+      function selectedBandIdx() {
+        if (state.selectedBands && state.selectedBands.length) return state.selectedBands.slice();
+        return [state.focusedBand ?? 0];
+      }
+      function loadRowLib() {
+        try { return JSON.parse(localStorage.getItem('murf-rows') || '{}'); } catch (e) { return {}; }
+      }
+      function writeRowLib(obj) {
+        localStorage.setItem('murf-rows', JSON.stringify(obj));
+      }
+      function refreshRowSelect() {
+        const sel = document.getElementById('rowLibrary');
+        if (!sel) return;
+        const keep = sel.value;
+        const lib = loadRowLib();
+        const names = Object.keys(lib).sort();
+        sel.innerHTML = '<option value="">— rows —</option>';
+        names.forEach(n => {
+          const o = document.createElement('option');
+          o.value = n; o.textContent = n;
+          sel.appendChild(o);
+        });
+        if (keep && lib[keep]) sel.value = keep;
+      }
+      function applyRowTools(kind) {
+        pushUndo();
+        const targets = selectedBandIdx();
+        targets.forEach(i => {
+          const band = state.pattern.bands[i];
+          if (!band) return;
+          if (kind === 'clear') {
+            band.steps = new Set();
+          } else if (kind === 'init') {
+            band.length = 1;
+            band.steps = new Set();
+          } else if (kind === 'rlen' || kind === 'rboth') {
+            band.length = 1 + Math.floor(Math.random() * 64);
+            if (kind === 'rlen') {
+              band.steps = new Set([...band.steps].filter(s => s <= band.length));
+            }
+          }
+          if (kind === 'rsteps' || kind === 'rboth') {
+            const next = new Set();
+            for (let s = 1; s <= band.length; s++) if (Math.random() < 0.5) next.add(s);
+            band.steps = next;
+          }
+        });
+        persistSession();
+        maybeAutoSend();
+        renderGridCells();
+        buildBandMeta();
+      }
+      document.getElementById('btnClearSteps').addEventListener('click', () => { flashBtn('btnClearSteps'); applyRowTools('clear'); setStatus('Cleared steps'); });
+      document.getElementById('btnInitBands').addEventListener('click', () => { flashBtn('btnInitBands'); applyRowTools('init'); setStatus('Init row(s)'); });
+      document.getElementById('btnRandSteps').addEventListener('click', () => { flashBtn('btnRandSteps'); applyRowTools('rsteps'); setStatus('Random steps'); });
+      document.getElementById('btnRandLen').addEventListener('click', () => { flashBtn('btnRandLen'); applyRowTools('rlen'); setStatus('Random length'); });
+      document.getElementById('btnRandBoth').addEventListener('click', () => { flashBtn('btnRandBoth'); applyRowTools('rboth'); setStatus('Random length + steps'); });
+      document.getElementById('btnSaveRow').addEventListener('click', () => {
+        flashBtn('btnSaveRow');
+        const i = state.focusedBand ?? 0;
+        const band = state.pattern.bands[i];
+        openNameModal('row-' + (i + 1), (name) => {
+          const lib = loadRowLib();
+          lib[name] = { length: band.length, steps: [...band.steps].sort((a,b)=>a-b) };
+          writeRowLib(lib);
+          refreshRowSelect();
+          document.getElementById('rowLibrary').value = name;
+          setStatus('Saved row ' + (i + 1) + ' as ' + name);
+        });
+      });
+      document.getElementById('btnLoadRow').addEventListener('click', () => {
+        flashBtn('btnLoadRow');
+        const name = document.getElementById('rowLibrary').value;
+        const item = name && loadRowLib()[name];
+        if (!item) { setStatus('Pick a saved row'); return; }
+        pushUndo();
+        selectedBandIdx().forEach(i => {
+          state.pattern.bands[i].length = item.length;
+          state.pattern.bands[i].steps = new Set(item.steps || []);
+        });
+        persistSession();
+        maybeAutoSend();
+        renderGridCells();
+        buildBandMeta();
+        setStatus('Loaded row onto band(s): ' + name);
+      });
+      document.getElementById('btnDeleteRow').addEventListener('click', () => {
+        flashBtn('btnDeleteRow');
+        const name = document.getElementById('rowLibrary').value;
+        if (!name) { setStatus('Pick a saved row'); return; }
+        const lib = loadRowLib();
+        delete lib[name];
+        writeRowLib(lib);
+        refreshRowSelect();
+        setStatus('Deleted row ' + name);
+      });
+      refreshRowSelect();
+
+      document.getElementById('btnInitPattern').addEventListener('click', () => {
         flashBtn('btnInitPattern');
         pushUndo();
         state.pattern.lfo = 0;
@@ -2201,6 +2314,7 @@
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
           { box: document.getElementById('bandMeta'), els: () => [...document.querySelectorAll('#bandMeta input')] },
           { box: document.querySelector('.tgroup.clip'), els: ['btnCopyPattern', 'btnPastePattern', 'btnCopyBand', 'btnPasteBand', 'btnInitPattern'] },
+          { box: document.querySelector('.tgroup.rowops'), els: ['btnClearSteps', 'btnInitBands', 'btnRandSteps', 'btnRandLen', 'btnRandBoth', 'btnSaveRow', 'rowLibrary', 'btnLoadRow', 'btnDeleteRow'] },
           { box: document.querySelector('.tgroup.files'), els: ['btnExportSyx', 'btnExportLibrary', 'btnImportSyx'] },
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
