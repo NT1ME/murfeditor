@@ -2961,7 +2961,7 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'T', btnStackPriority: 'T', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
+        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'N', btnStackPriority: 'N', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
       };
@@ -3607,7 +3607,7 @@
           setStatus((k === ',' || e.code === 'Comma') ? 'Lengths → shortest (' + dest + ')' : 'Lengths → longest (' + dest + ')');
           return;
         }
-        if (k === 'n') {
+        if (k === 'n' && activeTab() === 'pattern') {
           document.getElementById('btnSeqWrite')?.click();
           return;
         }
@@ -3649,8 +3649,10 @@
         else if (k === 'f') document.getElementById('btnFlip')?.click();
         else if (k === 't') {
           if (activeTab() === 'clock') document.getElementById('btnTapTempo')?.click();
-          else if (activeTab() === 'stack') document.getElementById('btnStackPriority')?.click();
-          else if (activeTab() === 'keyboard') document.getElementById('btnNotePriority')?.click();
+        }
+        else if (k === 'n' && (activeTab() === 'keyboard' || activeTab() === 'stack')) {
+          const id = activeTab() === 'stack' ? 'btnStackPriority' : 'btnNotePriority';
+          document.getElementById(id)?.click();
         }
         else if (k === 'g') {
           e.preventDefault();
