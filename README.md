@@ -1,12 +1,11 @@
 
-# MIDI MuRF Editor — Operator Manual
+# MIDI MuRF Editor — Operator Manual (2.9 start)
 
-Single-page editor for the MF-105M. Sends CC, PC, notes, pattern SysEx, MIDI clock, and performance clips. No sound engine.
+Single-page companion for the MF-105M. Pattern SysEx, CC/PC, performance notes, MIDI clock, clips, projects.
 
-Live: GitHub Pages URL you already use, in MIDIWeb or Chrome.
-After a deploy: force-quit MIDIWeb or hard-refresh Chrome. A normal refresh is not enough on iPad.
+After a deploy: force-quit MIDIWeb or hard-refresh Chrome.
 
-Default MIDI channel 1. Pick the port. ↻ if the box was plugged in late.
+Channel 1 by default. Pick the port.
 
 ---
 
@@ -14,193 +13,148 @@ Default MIDI channel 1. Pick the port. ↻ if the box was plugged in late.
 
 Main · Pattern · Keyboard · Stack · Clock
 
-| Key | Action |
-|-----|--------|
-| ` (backtick) | Next page |
-| Shift+` | Previous page |
+` ` next page · Shift+` previous.
+
+**G** — release Tab focus on every page (Enter becomes Play). On Pattern, G also focuses the grid.
 
 ---
 
-## Global bar
+## Clock cluster (global header)
 
-| Control | What it is |
-|---------|------------|
-| Clock | Arm F8. Off at launch — the app does not clock the rig until this is on |
-| Play | MIDI Start (FA) — pattern to step 1, ticks run |
-| Cont | MIDI Continue (FB) — pattern stays on current step, ticks run |
-| Stop | MIDI Stop (FC) — box freezes. Does **not** end a recording |
-| Rec | Arm / punch out a clip |
-| Play clip | Fire the loaded clip on top of the current grid |
-| BPM | 20–300, integer. Type, arrows when focused |
-| Division | Rate as a clock divider (CC9). Names from the hardware manual |
-| Pat Reset | CC90 — pattern to step 1 now |
-| Clk Reset | Note 65 — pattern restarts on the **next** tick |
-| Map | Digit aliases |
-| ? | Hold for captions (or hold Shift+/ ) |
+Order: **Arm · Play · Stop · Cont · Rec · Play clip · BPM · Division**
 
-### Transport keys
+Arm also turns **Clock Sync (CC89)** on. Without that the box ignores F8. Arm does **not** start ticks. Play does.
 
 | Key | Action |
 |-----|--------|
-| Enter | Play (Start) — unless a number box is focused |
-| Shift+Enter | Continue |
-| Shift+Space | Device Stop (FC). Clip playhead keeps running if you are recording |
-| \ | Rec arm, or punch out if a take is rolling |
-| Z | Pattern Reset (CC90) |
-| C | Clock Reset (note 65) |
-| X | Note 108 **only** on Keyboard / Stack (step / freeze animation) |
+| Enter | Play (FA) if nothing in the cluster is Tab-armed. If a cluster button is armed, Enter fires **that** button. If BPM is focused, Enter commits BPM only |
+| Shift+Enter | Continue (FB) |
+| Shift+Space | Device Stop (FC). Does not punch out a take |
+| \ | Rec arm / punch out |
+| Z | Pattern Reset CC90 |
+| C | Clock Reset note 65 |
+| X | Note 108 on Keyboard / Stack only |
 
-Enter / Shift+Enter / Shift+Space / \ are ignored while typing in a name, search, or number field.
+Tab walks the cluster on every page. Option+Tab jumps sections.
+
+**Division** focused: arrows walk the manual table, send CC9, list stays closed. Click opens the menu.
+
+**BPM** focused: arrows ±1 or type. 20–300 integer.
+
+Clock is **off** when the app opens. No F8 until Arm + Play.
 
 ---
 
-## Two clocks
+## Two timebases
 
-**Our playhead** — BPM × 24 PPQN. This is Record and Play clip. It can run while the box is stopped.
+**Playhead** (clips): 24 PPQN × BPM. Can run in memory while the box is stopped.
 
-**The box** — follows F8 only when Clock is armed and Play/Continue has been sent. Rate knob on the hardware becomes the **division** you pick (CC9). Do not add a PPQN control; the MuRF table is 24 PPQN.
+**Box:** F8 only when Armed and Play/Continue. Division = Rate as divider.
 
-| Message | Box |
-|---------|-----|
-| Start FA | Step 1, then run |
-| Continue FB | Same step, then run |
-| Stop FC | Freeze |
-| Note 65 | Restart on next tick; ticks keep going |
+| Byte | Box |
+|------|-----|
+| FA Start | Step 1, run |
+| FB Continue | Same step, run |
+| FC Stop | Freeze |
+| Note 65 | Restart on next tick |
 | CC90 | Step 1 now |
-| Note 108 | Step / stop animation (Keyboard & Stack) |
+| Note 108 | Step / freeze animation (play pages) |
 
 ---
 
-## Clips (Clock tab)
+## Clips
 
-v1 records: Mute / Trigger / Sustain notes, 65, 108, CC90, and FA / FB / FC if you press them.
+Records: notes (Mute / Trigger / Sustain), 65, 108, CC90, FA / FB / FC if you press them.
 
-Does **not** record: sliders, SysEx grids, division, BPM.
+Does not record: sliders, SysEx, division changes.
 
-`\` = arm (red / Arm). Enter while armed starts clock **and** the take. `\` again punches out. Shift+Space during a take writes FC into the clip and stops F8 to the box; our playhead still counts.
+`\` arm → Enter starts clock + take → perform → `\` punch out. Shift+Space during a take **is** a Stop in the clip; the take keeps rolling.
 
-Save take / Load / Delete on the Clock tab. Recorded BPM is stored and shown. **Clip BPM** can be changed after load. Play clip uses the **current** header BPM for the ruler unless you set clip BPM and we apply it — change header BPM to hear it faster/slower.
+Save / Load / Delete / Clip BPM on the Clock tab. Play clip overlays the current grid. Clips are not married to a pattern.
 
-Cap: 10 minutes or 10,000 events.
-
-Clips are not married to a pattern. Any clip on any grid. localStorage + Save take. Export of clips is the library on that tab.
-
-Play clip toggle = overlay. Pattern in the box stays whatever you last sent.
+Cap: 10 min or 10k events. localStorage + Save take.
 
 ---
 
-## Pattern page
+## Projects (Clock tab)
 
-Slot list is **2–12 Bass** and **14–24 Mids**. 1 and 13 are EQ on the hardware (still on Main program change).
+Save project downloads JSON. Open project restores:
 
-Eight bands, lengths 1–64. Band 1 is the top row.
+- Current grid, slot, LFO  
+- Main sliders + switches  
+- Pattern library + row library  
+- Clips + loaded clip name  
+- Digit Map  
+- BPM + division  
 
-### Grid keys
+Load leaves Clock / Play / Rec **off** and does not send filter CCs or Rate (those stop or restart the hardware clock). P and Play when you mean it.
+
+---
+
+## Pattern
+
+Slots **2–12 Bass**, **14–24 Mids**.
 
 | Key | Action |
 |-----|--------|
-| ↑ ↓ | Move band |
-| Shift+↑ ↓ | Add / peel bands |
-| ← → | Move caret |
-| Shift+← → | Step range (does not write) |
-| Option+← → | Length − / + |
-| Cmd+← → | Slide step range |
-| Cmd+↑ ↓ | Slide band set |
-| O | Toggle selected steps |
-| , / . | Snap to shortest / longest (one band = whole grid; several = the group) |
-| [ ] | Caret to step 1 / 64 |
-| ; : | Caret −8 |
-| ' " | Caret +8 |
-| − / = | Zoom |
-| N | Seq write on/off |
-| G | Focus grid (remembers the last control) |
-| Tab | Return from grid to that control |
-| ⌘A | All bands on / off (off returns to last single band) |
+| ↑ ↓ / Shift+↑ ↓ | Band / add-peel |
+| ← → / Shift+← → | Caret / range |
+| Option+← → | Length |
+| Cmd+arrows | Slide |
+| O | Write steps |
+| , . | Snap shortest / longest |
+| [ ] | Step 1 / 64 |
+| ; ' | −8 / +8 |
+| − = | Zoom |
+| N | Seq write |
+| Space | Next step (Seq on) |
+| Q W E R T Y H J | Stamp bands 1–8 (Seq on) |
+| ⌘A | All bands toggle |
 | ⌘I | Init Pattern |
-| ⌘X | Clear all steps |
-| I / F | Invert / Flip |
-| U or Escape | Collapse selection to caret |
+| ⌘X | Clear steps |
+| I F U | Invert / Flip / collapse |
+| ⌘C ⌘V | Bands |
+| ⌘⇧C ⌘⇧V | Pattern |
+| ⌘S ⌘O | Save / Load library |
+| P / A | Send / Auto Send |
 
-Fit 8…64 and Set 8…64 (same sizes). Row tools: Clr Steps, Init Row, Rnd Steps / Len / Both, Save/Load Row.
+Seq on forces Auto Send off. Stamp grows length only on bands you hit.
 
-### Seq write (N)
-
-Auto Send is forced off. **Q W E R T Y H J** = bands 1–8 at the caret. **Space** = next step. Length grows only for a band you stamp. Other Pattern commands stay live.
-
-### Clipboard / library
-
-| Key | Action |
-|-----|--------|
-| ⌘C / ⌘V | Copy / paste selected band(s) |
-| ⌘⇧C / ⌘⇧V | Copy / paste whole pattern |
-| ⌘S | Save current to library (grid + Main sliders/toggles sidecar) |
-| ⌘O | Load to grid only (does not send SysEx; does not send filter CCs — those stop the hardware clock) |
-| P | Send pattern |
-| A | Auto Send (blocked while Seq write is on) |
-
-Import .syx → library, does not replace the grid. Export current / export library item. Deletes are click-only.
-
-Load of an old library item with no sidecar leaves sliders alone.
+Row tools, Fit/Set 8…64, Import to library (not onto the grid). Load library does not blast CC20–27.
 
 ---
 
-## Keyboard
+## Keyboard / Stack
 
-One mode at a time. Mode buttons or ← →.
+Keyboard: **A–K** = current mode.  
+Stack: **1–8** Mute · **Q–I** Trigger · **A–K** Sustain.
 
-Computer keys **A S D F G H J K** = bands 1–8 of the **current** mode. Step mode = A only (note 108).
+**V** Latch (Mute / Sustain). Trigger ignores Latch.  
+Last-note: Triggered trills. Sustain + Mute stay poly.  
+Many computer keyboards cap at six keys down. Latch or fingers for eight.
 
-Last-note priority: Triggered trills. Sustain and Mute are polyphonic.
-
-**V** Latch (Mute / Sustain stick; tap again to release). Trigger ignores Latch.
-
----
-
-## Stack
-
-Three rows at once:
-
-| Row | Keys | Notes |
-|-----|------|-------|
-| Mute | 1–8 | C1–C2 |
-| Triggered | Q–I | C3–C4 |
-| Sustained | A–K | C5–C6 |
-
-Same band cannot be live in two modes — the new one kicks the old one off.
-
-A computer keyboard often reports only **six** keys at once. Latch eight one-by-one, or use fingers / MIDI in. Last-note is per Triggered row, not across Mute.
+Same band cannot be two modes at once.
 
 ---
 
-## Main
+## Map / hints
 
-Sliders + number boxes 0–127. Filter levels are Hertz labels (Bass / Mids). Moving a filter level **stops the hardware pattern clock** (manual). Drive, Mix, Envelope, Rate (free, off-clock), LFO Sweep, toggles: Freq, LFO, Bypass, Staccato, Clock Sync (CC89).
+Map: Map button → a button → digit 1–0. Factory keys stay. Stack `1–8` are Mute notes, not aliases.
 
----
-
-## Map and hints
-
-Map: tap Map, tap a **button**, tap 1–0. Factory keys stay. Digits are notes on Stack (`1–8` Mute), so mappings do not fire there.
-
-Hold **?** or the header button: captions on buttons + grid one-liner.
-
----
-
-## MIDI in / Ableton / Max
-
-Not in this build. Next likely cut: listen on an input and thru/remap to these note numbers (IAC from Max or Live).
+Hold **?** (Shift+/) for captions, including transport and mapped digits.
 
 ---
 
 ## Fast path
 
-1. Port. Arm **Clock**. Division 16th. BPM 120. Enter. Orange Rate LED.  
-2. Pattern: Init or Load, Seq write or grid, **P**.  
-3. Stack: V to latch mutes over a short pattern, snappy envelope.  
-4. `\` Rec, play, `\` punch out, Save take, Play clip.
+Port → Arm Clock (Sync on) → 16th → 120 → G → Enter.  
+Pattern work → P.  
+Stack / Latch.  
+`\` Rec → play → `\` → Save take → Play clip.  
+Save project when the jam is a jam.
 
 ---
 
-## Not in this build
+## Not built
 
-Ableton Link, clock-in, playlist SysEx chaining, PPQN switch, clip-pattern marriage, overdub UI, recording sliders or grids into a clip.
+Link, clock-in, playlist SysEx chaining, overdub UI, recording the grid into a clip, PPQN switch.
