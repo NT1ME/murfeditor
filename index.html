@@ -833,6 +833,7 @@
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button id="btnNoteReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnNotePriority" class="on">Last-note priority: On</button>
+            <button id="btnLatch">Latch: Off</button>
           </div>
         </div>
       </div>
@@ -849,6 +850,7 @@
           <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
             <button id="btnStackReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnStackPriority" class="on">Last-note priority: On</button>
+            <button id="btnStackLatch">Latch: Off</button>
           </div>
         </div>
       </div>
@@ -897,6 +899,7 @@
       channel: 1, // 1-16
       autoSend: false,
       seqWrite: false,
+      latch: false,
       pattern: {
         slot: 12,          // 1-24
         lfo: 0,            // 0-255
@@ -2262,7 +2265,50 @@
       });
     }
 
+    const perfLatched = new Set();
+    function modeOfNote(note) {
+      for (const m of ['mute', 'triggered', 'sustained']) {
+        if ((NOTE_MAPS[m] || []).includes(note)) return m;
+      }
+      return null;
+    }
+    function bandOfNote(note) {
+      for (const m of ['mute', 'triggered', 'sustained']) {
+        const i = (NOTE_MAPS[m] || []).indexOf(note);
+        if (i >= 0) return i;
+      }
+      return -1;
+    }
+    function releaseNote(note) {
+      sendNoteOff(note);
+      perfLatched.delete(note);
+      document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.remove('active'));
+    }
+    function stealBand(note) {
+      const band = bandOfNote(note);
+      if (band < 0) return;
+      [...perfLatched].forEach(n => {
+        if (n !== note && bandOfNote(n) === band) releaseNote(n);
+      });
+    }
+    function syncLatchButtons() {
+      ['btnLatch', 'btnStackLatch'].forEach(id => {
+        const b = document.getElementById(id);
+        if (!b) return;
+        b.classList.toggle('on', !!state.latch);
+        b.textContent = 'Latch: ' + (state.latch ? 'On' : 'Off');
+      });
+    }
+    function toggleLatch() {
+      state.latch = !state.latch;
+      if (!state.latch) [...perfLatched].forEach(releaseNote);
+      syncLatchButtons();
+      setStatus('Latch ' + (state.latch ? 'on' : 'off'));
+    }
+
     function initPerfComputerKeys() {
+      document.getElementById('btnLatch')?.addEventListener('click', toggleLatch);
+      document.getElementById('btnStackLatch')?.addEventListener('click', toggleLatch);
       function down(e) {
         if (e.metaKey || e.ctrlKey || e.repeat) return;
         const tab = activeTab();
@@ -2270,16 +2316,18 @@
         const tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
         const k = (e.key || '').toLowerCase();
+        if (k === 'v') { e.preventDefault(); toggleLatch(); return; }
         if ('zcx'.includes(k) && k.length === 1) return;
         let note = null, mode = null;
         if (tab === 'keyboard') {
           if (state.perfMode === 'step') {
             if (k !== 'a') return;
-            note = 108;
+            note = 108; mode = 'step';
           } else {
             const row = 'asdfghjk';
             if (row.indexOf(k) < 0) return;
-            note = NOTE_MAPS[state.perfMode][row.indexOf(k)];
+            mode = state.perfMode;
+            note = NOTE_MAPS[mode][row.indexOf(k)];
           }
         } else {
           for (const m of ['mute', 'triggered', 'sustained']) {
@@ -2290,17 +2338,25 @@
         if (note == null) return;
         e.preventDefault();
         if (perfHeld.has(k)) return;
-        perfHeld.set(k, note);
+        const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+        if (canLatch && perfLatched.has(note)) {
+          releaseNote(note);
+          return;
+        }
+        stealBand(note);
+        perfHeld.set(k, { note, mode });
         sendNoteOn(note, 100);
+        if (canLatch) perfLatched.add(note);
         document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.add('active'));
       }
       function up(e) {
         const k = (e.key || '').toLowerCase();
         if (!perfHeld.has(k)) return;
-        const note = perfHeld.get(k);
+        const { note, mode } = perfHeld.get(k);
         perfHeld.delete(k);
-        sendNoteOff(note);
-        document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.remove('active'));
+        const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+        if (canLatch && perfLatched.has(note)) return;
+        releaseNote(note);
       }
       document.addEventListener('keydown', down);
       document.addEventListener('keyup', up);
@@ -2399,7 +2455,7 @@
         } else {
           el.classList.toggle('on', v >= 64);
         }
-        if (typeof sendCC === 'function') sendCC(parseInt(cc, 10), el.tagName === 'INPUT' ? v : (v >= 64 ? 127 : 0));
+        /* UI only on Load — CC20–27 and CC9 stop/restart the MuRF clock */
       });
     }
 
