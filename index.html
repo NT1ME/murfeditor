@@ -2810,7 +2810,7 @@
         if (!el) return false;
         const tag = el.tagName || '';
         const ttype = el.type || '';
-        return tag === 'TEXTAREA' || (tag === 'INPUT' && (ttype === 'text' || ttype === 'search' || el.id === 'nameModalInput'));
+        return tag === 'TEXTAREA' || (tag === 'INPUT' && (ttype === 'text' || ttype === 'search' || ttype === 'number' || el.id === 'nameModalInput'));
       }
       document.addEventListener('keydown', (e) => {
         if (isTextEntry(e.target) && e.key !== 'Tab' && !(e.metaKey || e.ctrlKey)) return;
