@@ -192,6 +192,16 @@
     button:disabled { opacity: 0.4; cursor: not-allowed; }
 
     /* Tabs */
+
+    .tabs button { padding: 4px 10px; font-size: 13px; }
+    header button { padding: 4px 8px; font-size: 12px; }
+    #beatLed {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #333; box-shadow: inset 0 0 0 1px #555;
+    }
+    #beatLed.on { background: #e8d48a; box-shadow: 0 0 8px #e8d48a; }
+    #view-stack .stack-row .key { height: 18vh; min-height: 72px; font-size: 13px; }
+
     .tabs {
       display: flex;
       background: var(--panel);
@@ -609,6 +619,7 @@
           <button id="btnPlayClip">Play clip</button>
           <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
           <select id="divSelect" title="Clock division (CC9)"></select>
+          <div id="beatLed" title="Quarter pulse"></div>
         </div>
         <button id="btnGlobalPatternReset" title="CC90">Pat Reset</button>
         <button id="btnGlobalClockReset" title="Note 65">Clk Reset</button>
@@ -870,6 +881,7 @@
             <button id="btnNoteReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnNotePriority" class="on">Last-note priority: On</button>
             <button id="btnLatch">Latch: Off</button>
+            <button id="btnKeyStep" title="Note 108">Step (X)</button>
           </div>
         </div>
       </div>
@@ -887,6 +899,7 @@
             <button id="btnStackReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnStackPriority" class="on">Last-note priority: On</button>
             <button id="btnStackLatch">Latch: Off</button>
+            <button id="btnStackStep" title="Note 108">Step (X)</button>
           </div>
         </div>
       </div>
@@ -2388,6 +2401,13 @@
     function initPerfComputerKeys() {
       document.getElementById('btnLatch')?.addEventListener('click', toggleLatch);
       document.getElementById('btnStackLatch')?.addEventListener('click', toggleLatch);
+      function fire108() {
+        sendNoteOn(108, 100);
+        setTimeout(() => sendNoteOff(108), 50);
+        setStatus('Step / 108');
+      }
+      document.getElementById('btnKeyStep')?.addEventListener('click', fire108);
+      document.getElementById('btnStackStep')?.addEventListener('click', fire108);
       function down(e) {
         if (e.metaKey || e.ctrlKey || e.repeat) return;
         const tab = activeTab();
@@ -2931,7 +2951,7 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'T', btnStackPriority: 'T', btnLatch: 'V', btnStackLatch: 'V', 
+        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'T', btnStackPriority: 'T', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
       };
@@ -2973,23 +2993,18 @@
         state.mapTarget = btn.id;
         setStatus('Map: now press 1–0 for ' + btn.id.replace(/^btn/, ''));
       }, true);
-      const show = () => document.body.classList.add('show-hints');
-      const hide = () => document.body.classList.remove('show-hints');
-      helpBtn?.addEventListener('pointerdown', show);
-      helpBtn?.addEventListener('pointerup', hide);
-      helpBtn?.addEventListener('pointerleave', hide);
-      const hintKey = (e) => e.code === 'Slash' || e.key === '?' || e.key === '/';
+
+      function toggleHints() {
+        document.body.classList.toggle('show-hints');
+        document.getElementById('btnHelpHints')?.classList.toggle('on', document.body.classList.contains('show-hints'));
+      }
+      helpBtn?.addEventListener('click', (e) => { e.preventDefault(); toggleHints(); });
       document.addEventListener('keydown', (e) => {
-        if (!hintKey(e)) return;
+        if (!(e.key === '?' || (e.shiftKey && e.code === 'Slash'))) return;
         const tag = (e.target && e.target.tagName) || '';
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
         e.preventDefault();
-        document.body.classList.add('show-hints');
-      });
-      document.addEventListener('keyup', (e) => {
-        if (!hintKey(e) && e.key !== 'Shift') return;
-        if (e.key === 'Shift' && document.body.classList.contains('show-hints')) return;
-        if (hintKey(e)) document.body.classList.remove('show-hints');
+        if (!e.repeat) toggleHints();
       });
     }
 
@@ -3056,6 +3071,8 @@
       const c = state.clock;
       if (!c.running) return;
       c.tick++;
+      const led = document.getElementById('beatLed');
+      if (led) led.classList.toggle('on', c.running && (c.tick % 24) < 6);
       if (c.armed && state.output) {
         try { state.output.send([0xF8]); } catch (e) {}
       }
@@ -3468,19 +3485,24 @@
         }
         if ((e.metaKey || e.ctrlKey) && k === 'x') {
           e.preventDefault();
-          document.getElementById('btnClearAll')?.click();
+          if (activeTab() === 'clock') document.getElementById('btnDeleteClip')?.click();
+          else document.getElementById('btnClearAll')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 's') {
           e.preventDefault();
-          document.getElementById('btnSaveLibrary')?.click();
-          flashBtn('btnSaveLibrary');
+          if (activeTab() === 'clock') {
+            if (e.shiftKey) document.getElementById('btnSaveProject')?.click();
+            else document.getElementById('btnSaveClip')?.click();
+          } else document.getElementById('btnSaveLibrary')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 'o') {
           e.preventDefault();
-          document.getElementById('btnLoadLibrary')?.click();
-          flashBtn('btnLoadLibrary');
+          if (activeTab() === 'clock') {
+            if (e.shiftKey) document.getElementById('btnOpenProject')?.click();
+            else document.getElementById('btnLoadClip')?.click();
+          } else document.getElementById('btnLoadLibrary')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 'i') {
@@ -3602,8 +3624,9 @@
         else if (k === 'i') document.getElementById('btnInvert')?.click();
         else if (k === 'f') document.getElementById('btnFlip')?.click();
         else if (k === 't') {
-          const id = activeTab() === 'stack' ? 'btnStackPriority' : 'btnNotePriority';
-          document.getElementById(id)?.click();
+          if (activeTab() === 'clock') document.getElementById('btnTapTempo')?.click();
+          else if (activeTab() === 'stack') document.getElementById('btnStackPriority')?.click();
+          else if (activeTab() === 'keyboard') document.getElementById('btnNotePriority')?.click();
         }
         else if (k === 'g') {
           e.preventDefault();
