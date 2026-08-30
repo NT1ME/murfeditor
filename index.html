@@ -2682,6 +2682,7 @@
     function showTab(name) {
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+      if (typeof applyKbdHints === 'function') applyKbdHints();
     }
 
     function cycleAppTab(dir) {
@@ -2887,11 +2888,22 @@
 
     // ---------- Boot ----------
 
-    function loadDigitMap() {
+    function loadDigitMapAll() {
       try { return JSON.parse(localStorage.getItem('murf-digits') || '{}'); } catch (e) { return {}; }
     }
+    function loadDigitMap() {
+      const all = loadDigitMapAll();
+      const tab = (typeof activeTab === 'function' && activeTab()) || 'pattern';
+      if (all[tab] && typeof all[tab] === 'object' && !Array.isArray(all[tab])) return all[tab];
+      // migrate old flat map onto pattern
+      if (all['1'] || all['2']) return all;
+      return all[tab] || {};
+    }
     function writeDigitMap(obj) {
-      localStorage.setItem('murf-digits', JSON.stringify(obj));
+      const all = loadDigitMapAll();
+      const tab = (typeof activeTab === 'function' && activeTab()) || 'pattern';
+      all[tab] = obj;
+      localStorage.setItem('murf-digits', JSON.stringify(all));
     }
     function applyKbdHints() {
       const factory = {
@@ -2902,7 +2914,7 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnPlay: '↵', btnContinue: '⇧↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', 
+        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'T', btnStackPriority: 'T', btnLatch: 'V', btnStackLatch: 'V', 
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
       };
@@ -3267,28 +3279,15 @@
           applyDivision();
           return;
         }
-        if (e.key === 'Enter' && e.shiftKey && !(e.target && (e.target.tagName === 'TEXTAREA'))) {
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isTextEntry(e.target)) {
           e.preventDefault();
           clockPlay(false);
           return;
         }
-        if (e.key === 'Enter' && !(e.target && (e.target.tagName === 'TEXTAREA' || e.target.id === 'nameModalInput'))) {
-          const armed = state.armedEl;
-          if (e.target && e.target.id === 'bpmBox') {
-            e.preventDefault();
-            e.target.dispatchEvent(new Event('change', { bubbles: true }));
-            return;
-          }
-          if (armed && armed.tagName === 'BUTTON' && document.getElementById('clockCluster')?.contains(armed)) {
-            e.preventDefault();
-            armed.click();
-            return;
-          }
-          if (!isTextEntry(e.target)) {
-            e.preventDefault();
-            clockPlay(true);
-            return;
-          }
+        if (e.key === 'Enter' && e.shiftKey && !isTextEntry(e.target)) {
+          e.preventDefault();
+          clockPlay(true);
+          return;
         }
         if (e.code === 'Space' && e.shiftKey && !isTextEntry(e.target)) {
           e.preventDefault();
@@ -3585,6 +3584,10 @@
         else if (k === 'a' && activeTab() !== 'keyboard' && activeTab() !== 'stack') document.getElementById('btnAutoSend')?.click();
         else if (k === 'i') document.getElementById('btnInvert')?.click();
         else if (k === 'f') document.getElementById('btnFlip')?.click();
+        else if (k === 't') {
+          const id = activeTab() === 'stack' ? 'btnStackPriority' : 'btnNotePriority';
+          document.getElementById(id)?.click();
+        }
         else if (k === 'g') {
           e.preventDefault();
           clearArmed();
