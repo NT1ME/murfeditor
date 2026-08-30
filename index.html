@@ -1638,7 +1638,19 @@
         setStatus('Pasted onto band(s) ' + dest.map(i => i + 1).join(', '));
       });
       document.getElementById('btnSelectAllBands').addEventListener('click', () => {
-        state.selectedBands = [0,1,2,3,4,5,6,7];
+        flashBtn('btnSelectAllBands');
+        if (state.selectedBands && state.selectedBands.length === 8) {
+          const b = state.lastSoloBand ?? state.focusedBand ?? 0;
+          state.selectedBands = [b];
+          state.focusedBand = b;
+          state.bandAnchor = b;
+          setStatus('Bands: ' + (b + 1));
+        } else {
+          if (state.selectedBands && state.selectedBands.length === 1) state.lastSoloBand = state.selectedBands[0];
+          else state.lastSoloBand = state.focusedBand ?? 0;
+          state.selectedBands = [0,1,2,3,4,5,6,7];
+          setStatus('All bands');
+        }
         buildGrid();
       });
       document.getElementById('btnClearBandSel').addEventListener('click', () => {
@@ -2724,8 +2736,13 @@
     }
     function applyKbdHints() {
       const factory = {
-        btnSendPattern: 'P', btnAutoSend: 'A', btnUndo: '⌘Z', btnRedo: '⌘⇧Z',
+        btnSendPattern: 'P', btnAutoSend: 'A', btnSeqWrite: 'N',
+        btnUndo: '⌘Z', btnRedo: '⌘⇧Z',
         btnClearAll: '⌘X', btnInvert: 'I', btnFlip: 'F',
+        btnCopyPattern: '⌘⇧C', btnPastePattern: '⌘⇧V',
+        btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
+        btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
+        btnSelectAllBands: '⌘A',
         btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnStopPattern: 'X',
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
@@ -2951,6 +2968,23 @@
           e.preventDefault();
           document.getElementById('btnSaveLibrary')?.click();
           flashBtn('btnSaveLibrary');
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'o') {
+          e.preventDefault();
+          document.getElementById('btnLoadLibrary')?.click();
+          flashBtn('btnLoadLibrary');
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'i') {
+          e.preventDefault();
+          document.getElementById('btnInitPattern')?.click();
+          flashBtn('btnInitPattern');
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'a') {
+          e.preventDefault();
+          document.getElementById('btnSelectAllBands')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 'c') {
