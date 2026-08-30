@@ -2545,15 +2545,18 @@
       helpBtn?.addEventListener('pointerdown', show);
       helpBtn?.addEventListener('pointerup', hide);
       helpBtn?.addEventListener('pointerleave', hide);
+      const hintKey = (e) => e.code === 'Slash' || e.key === '?' || e.key === '/';
       document.addEventListener('keydown', (e) => {
-        if (e.key === '?' || (e.shiftKey && e.key === '/')) {
-          const tag = (e.target && e.target.tagName) || '';
-          if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-          document.body.classList.add('show-hints');
-        }
+        if (!hintKey(e)) return;
+        const tag = (e.target && e.target.tagName) || '';
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        document.body.classList.add('show-hints');
       });
       document.addEventListener('keyup', (e) => {
-        if (e.key === '?' || e.key === '/') document.body.classList.remove('show-hints');
+        if (!hintKey(e) && e.key !== 'Shift') return;
+        if (e.key === 'Shift' && document.body.classList.contains('show-hints')) return;
+        if (hintKey(e)) document.body.classList.remove('show-hints');
       });
     }
 
