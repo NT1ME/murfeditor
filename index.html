@@ -399,7 +399,7 @@
       background: var(--panel);
     }
     .grid {
-      --cell: 18px;
+      --cell: 20px;
       display: grid;
       grid-template-columns: 44px repeat(64, var(--cell));
       gap: 2px;
@@ -423,7 +423,7 @@
     .grid-label.band {
       cursor: pointer; font-weight: 700;
       flex-direction: column; align-items: center; justify-content: center;
-      min-height: 42px; gap: 1px;
+      min-height: var(--cell); gap: 1px;
     }
     .grid-label.band .bname { font-weight: 700; line-height: 1.2; }
     .grid-label.band .freq { color: #f2f2f0; font-weight: 400; line-height: 1.15; }
@@ -449,9 +449,11 @@
     .cell {
       width: var(--cell);
       min-width: var(--cell);
-      height: 36px;
+      height: var(--cell);
+      min-height: var(--cell);
+      aspect-ratio: 1;
       background: var(--grid-off);
-      border-radius: 3px;
+      border-radius: 50%;
       cursor: pointer;
     }
     .grid-label { min-height: 22px; }
