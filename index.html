@@ -582,14 +582,17 @@
     <header>
       <h1>MIDI MuRF Editor</h1>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <button id="btnClockArm" title="Arm MIDI clock (no F8 until on)">Clock</button>
-        <button id="btnPlay" title="Enter — MIDI Start">Play</button>
-        <button id="btnContinue" title="Shift+Enter — MIDI Continue">Cont</button>
-        <button id="btnClockStop" title="Shift+Space — MIDI Stop">Stop</button>
-        <button id="btnRecord" title="\ — arm / punch out">Rec</button>
-        <button id="btnPlayClip" title="Play clip over current pattern">Play clip</button>
-        <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
-        <select id="divSelect" title="Clock division (CC9)"></select>
+        <div id="clockCluster" class="tgroup" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span class="tlabel">Clock</span>
+          <button id="btnClockArm" title="Arm MIDI clock">Clock</button>
+          <button id="btnPlay" title="Enter">Play</button>
+          <button id="btnClockStop" title="Shift+Space">Stop</button>
+          <button id="btnContinue" title="Shift+Enter">Cont</button>
+          <button id="btnRecord" title="\">Rec</button>
+          <button id="btnPlayClip">Play clip</button>
+          <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
+          <select id="divSelect" title="Clock division (CC9)"></select>
+        </div>
         <button id="btnGlobalPatternReset" title="CC90">Pat Reset</button>
         <button id="btnGlobalClockReset" title="Note 65">Clk Reset</button>
         <button type="button" id="btnMapMode">Map</button>
@@ -886,6 +889,9 @@
             <button type="button" id="btnSaveClip">Save take</button>
             <button type="button" id="btnLoadClip">Load</button>
             <button type="button" id="btnDeleteClip">Delete clip</button>
+            <button type="button" id="btnSaveProject">Save project</button>
+            <button type="button" id="btnOpenProject">Open project</button>
+            <input type="file" id="projectFile" accept=".json,application/json" hidden>
             <label>Clip BPM <input id="clipBpmBox" type="number" min="20" max="300" value="120" style="width:56px"></label>
           </div>
         </div>
@@ -2705,9 +2711,12 @@
 
     function pageSections() {
       const tab = activeTab();
+      const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect'] };
+      const resetSec = { box: null, els: ['btnGlobalPatternReset', 'btnGlobalClockReset'] };
       if (tab === 'main') {
         return [
           { box: null, els: ['midiPort', 'btnRefreshMidi', 'midiChannel'] },
+          clockSec, resetSec,
           { box: document.querySelector('#view-main .panel'), els: ['pcPattern', 'togFreq', 'togLfo', 'togBypass', 'togStaccato', 'togClockSync'] },
           { box: document.getElementById('panelMainControls'), els: () => [
             ...document.querySelectorAll('#panelMainControls .cc-slider, #panelMainControls .value-input'),
@@ -2718,6 +2727,7 @@
       }
       if (tab === 'pattern') {
         return [
+          clockSec, resetSec,
           { box: null, els: ['patternSlot', 'patternLfo'] },
           { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnSeqWrite', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
           { box: document.querySelector('.tgroup.set'), els: () => [document.getElementById('btnSelectAllBands'), document.getElementById('btnClearBandSel'), ...document.querySelectorAll('.tgroup.set [data-len]')] },
@@ -2730,9 +2740,16 @@
           { box: document.querySelector('.tgroup.lib'), els: ['librarySearch', 'patternLibrary', 'sendAsSlot', 'btnLoadLibrary', 'btnSaveLibrary', 'btnDeleteLibrary', 'btnDeleteAllLibrary'] }
         ];
       }
-      return [
-        { box: document.querySelector('#view-keyboard .panel'), els: () => [...document.querySelectorAll('[data-mode]'), document.getElementById('btnNoteReset'), document.getElementById('btnNotePriority')] }
-      ];
+      if (tab === 'keyboard') {
+        return [clockSec, resetSec, { box: document.querySelector('#view-keyboard .panel'), els: () => [...document.querySelectorAll('#view-keyboard [data-mode]'), document.getElementById('btnNoteReset'), document.getElementById('btnNotePriority'), document.getElementById('btnLatch')] }];
+      }
+      if (tab === 'stack') {
+        return [clockSec, resetSec, { box: document.querySelector('#view-stack .panel'), els: ['btnStackReset', 'btnStackPriority', 'btnStackLatch'] }];
+      }
+      if (tab === 'clock') {
+        return [clockSec, resetSec, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'clipBpmBox', 'btnSaveProject', 'btnOpenProject'] }];
+      }
+      return [clockSec, resetSec];
     }
 
     function resolveEls(sec) {
@@ -2885,7 +2902,7 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', 
+        btnPlay: '↵', btnContinue: '⇧↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', 
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
       };
@@ -3100,6 +3117,11 @@
       });
       document.getElementById('btnClockArm')?.addEventListener('click', () => {
         state.clock.armed = !state.clock.armed;
+        if (state.clock.armed) {
+          const sync = document.getElementById('togClockSync');
+          if (sync && !sync.classList.contains('on')) sync.click();
+          else sendCC(89, 127);
+        }
         updateClockReadout();
       });
       document.getElementById('btnPlay')?.addEventListener('click', () => clockPlay(true));
@@ -3158,6 +3180,70 @@
         refreshClipSelect();
         setStatus('Deleted clip ' + name);
       });
+
+      function collectProject() {
+        return {
+          v: 1,
+          pattern: {
+            slot: state.pattern.slot,
+            lfo: state.pattern.lfo,
+            bands: state.pattern.bands.map(b => ({ length: b.length, steps: [...b.steps] }))
+          },
+          panel: snapshotPanel(),
+          bpm: state.clock.bpm,
+          div: state.clock.div,
+          clips: state.clock.clips,
+          clipName: document.getElementById('clipSelect')?.value || '',
+          library: JSON.parse(localStorage.getItem('murf-library') || '{}'),
+          rows: JSON.parse(localStorage.getItem('murf-rows') || '{}'),
+          digits: loadDigitMap()
+        };
+      }
+      function applyProject(p) {
+        if (!p) return;
+        if (p.pattern) {
+          state.pattern.slot = p.pattern.slot || 12;
+          state.pattern.lfo = p.pattern.lfo || 0;
+          if (p.pattern.bands) state.pattern.bands = p.pattern.bands.map(b => ({ length: b.length || 1, steps: new Set(b.steps || []) }));
+        }
+        if (p.panel) applyPanel(p.panel);
+        if (p.bpm) { state.clock.bpm = p.bpm; const b = document.getElementById('bpmBox'); if (b) b.value = p.bpm; }
+        if (p.div != null) { state.clock.div = p.div; const s = document.getElementById('divSelect'); if (s) s.value = String(p.div); }
+        if (p.clips) { state.clock.clips = p.clips; writeClockClips(); refreshClipSelect(); }
+        if (p.clipName && state.clock.clips[p.clipName]) {
+          state.clock.clip = state.clock.clips[p.clipName];
+          const sel = document.getElementById('clipSelect'); if (sel) sel.value = p.clipName;
+        }
+        if (p.library) localStorage.setItem('murf-library', JSON.stringify(p.library));
+        if (p.rows) localStorage.setItem('murf-rows', JSON.stringify(p.rows));
+        if (p.digits) { writeDigitMap(p.digits); applyKbdHints(); }
+        state.clock.running = false; state.clock.recording = false; state.clock.recArm = false; state.clock.armed = false;
+        stopTimer();
+        persistSession();
+        buildGrid();
+        refreshLibrarySelect?.();
+        refreshRowSelect?.();
+        updateClockReadout();
+        setStatus('Project loaded — Clock off, nothing sent');
+      }
+      document.getElementById('btnSaveProject')?.addEventListener('click', () => {
+        const blob = new Blob([JSON.stringify(collectProject(), null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'murf-project.json';
+        a.click();
+        setStatus('Project downloaded');
+      });
+      document.getElementById('btnOpenProject')?.addEventListener('click', () => document.getElementById('projectFile')?.click());
+      document.getElementById('projectFile')?.addEventListener('change', ev => {
+        const f = ev.target.files && ev.target.files[0];
+        ev.target.value = '';
+        if (!f) return;
+        const r = new FileReader();
+        r.onload = () => { try { applyProject(JSON.parse(r.result)); } catch (e) { setStatus('Bad project file'); } };
+        r.readAsText(f);
+      });
+
       refreshClipSelect();
       updateClockReadout();
     }
@@ -3170,6 +3256,50 @@
         return tag === 'TEXTAREA' || (tag === 'INPUT' && (ttype === 'text' || ttype === 'search' || ttype === 'number' || el.id === 'nameModalInput'));
       }
       document.addEventListener('keydown', (e) => {
+        if (e.target && e.target.id === 'divSelect' && e.key.startsWith('Arrow')) {
+          e.preventDefault();
+          const sel = e.target;
+          const n = CLOCK_DIVS.length;
+          let i = parseInt(sel.value, 10) || 0;
+          i = (e.key === 'ArrowDown' || e.key === 'ArrowRight') ? Math.min(n - 1, i + 1) : Math.max(0, i - 1);
+          sel.value = String(i);
+          state.clock.div = i;
+          applyDivision();
+          return;
+        }
+        if (e.key === 'Enter' && e.shiftKey && !(e.target && (e.target.tagName === 'TEXTAREA'))) {
+          e.preventDefault();
+          clockPlay(false);
+          return;
+        }
+        if (e.key === 'Enter' && !(e.target && (e.target.tagName === 'TEXTAREA' || e.target.id === 'nameModalInput'))) {
+          const armed = state.armedEl;
+          if (e.target && e.target.id === 'bpmBox') {
+            e.preventDefault();
+            e.target.dispatchEvent(new Event('change', { bubbles: true }));
+            return;
+          }
+          if (armed && armed.tagName === 'BUTTON' && document.getElementById('clockCluster')?.contains(armed)) {
+            e.preventDefault();
+            armed.click();
+            return;
+          }
+          if (!isTextEntry(e.target)) {
+            e.preventDefault();
+            clockPlay(true);
+            return;
+          }
+        }
+        if (e.code === 'Space' && e.shiftKey && !isTextEntry(e.target)) {
+          e.preventDefault();
+          clockStopDevice();
+          return;
+        }
+        if ((e.key === '\\' || e.code === 'Backslash') && !isTextEntry(e.target)) {
+          e.preventDefault();
+          punchOut();
+          return;
+        }
         if (isTextEntry(e.target) && e.key !== 'Tab' && !(e.metaKey || e.ctrlKey)) return;
         if (state.mapMode && /^[0-9]$/.test(e.key)) {
           e.preventDefault();
@@ -3456,8 +3586,11 @@
         else if (k === 'i') document.getElementById('btnInvert')?.click();
         else if (k === 'f') document.getElementById('btnFlip')?.click();
         else if (k === 'g') {
+          e.preventDefault();
+          clearArmed();
+          try { document.activeElement?.blur(); } catch (err) {}
           if (activeTab() === 'pattern') focusGrid();
-          else document.activeElement?.blur();
+          setStatus('Focus released');
         }
         else if (k === 'z') {
           document.getElementById('btnGlobalPatternReset')?.click();
