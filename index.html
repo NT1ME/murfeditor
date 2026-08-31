@@ -632,11 +632,12 @@
           <div id="beatLed" title="Quarter pulse"></div>
         </div>
         <div id="resetCluster" style="display:flex;gap:6px;align-items:center">
-          <button id="btnGlobalPatternReset" title="CC90 / Z">Pat Reset</button>
-          <button id="btnStopPattern" title="Note 108 / X">Stop</button>
-          <button id="btnGlobalClockReset" title="Note 65 / C">Clk Reset</button>
-          <button type="button" id="btnMapMode">Map</button>
-          <button type="button" id="btnHelpHints">?</button>
+          <button id="btnGlobalPatternReset" title="CC90 / Z" data-kbd="Z">Pat Reset</button>
+          <button id="btnHaltPattern" title="CC20 halt / Shift+X" data-kbd="⇧X">Halt</button>
+          <button id="btnStopPattern" title="Note 108 / X" data-kbd="X">Step</button>
+          <button id="btnGlobalClockReset" title="Note 65 / C" data-kbd="C">Clk Reset</button>
+          <button type="button" id="btnMapMode" data-kbd="Map">Map</button>
+          <button type="button" id="btnHelpHints" data-kbd="?">?</button>
         </div>
       </div>
       <div class="midi-status">
@@ -821,7 +822,7 @@
         <div class="grid-wrap">
           <div class="grid" id="patternGrid"></div>
         </div>
-        <div id="gridHint">↑↓ band · ←→ step · ⇧ range · ⌥ length · ⌘ slide · [ ] ±8 · [ ] ends · ; ' jump 8 · O write · , . snap</div>
+        <div id="gridHint">↑↓ band · ←→ step · ⇧ range · ⌥ length · ⌘ slide · [ ] ±8 · [ ] ends · ; ' jump 8 · O write · , . snap · ⇧X halt · X step · Z pat · C clk</div>
 
         <div class="band-meta" id="bandMeta"></div>
 
@@ -1181,6 +1182,21 @@
       flashMidi();
     }
 
+
+    function currentF1() {
+      const el = document.querySelector('[data-cc="20"]');
+      if (el && el.tagName === 'INPUT') {
+        const n = parseInt(el.value, 10);
+        if (!isNaN(n)) return n & 0x7F;
+      }
+      if (state.ccs && state.ccs['20'] != null) return state.ccs['20'] & 0x7F;
+      return 0;
+    }
+    function haltPattern() {
+      sendCC(20, currentF1());
+      flashBtn('btnHaltPattern');
+      setStatus('Halt (CC20 @ ' + currentF1() + ')');
+    }
     function sendStep108() {
       sendNoteOn(108, 100);
       setTimeout(() => sendNoteOff(108), 50);
@@ -3235,6 +3251,7 @@
       document.getElementById('btnPlay')?.addEventListener('click', () => clockPlay(true));
       document.getElementById('btnContinue')?.addEventListener('click', () => clockPlay(false));
       document.getElementById('btnClockStop')?.addEventListener('click', clockStopDevice);
+      document.getElementById('btnHaltPattern')?.addEventListener('click', haltPattern);
       document.getElementById('btnStopPattern')?.addEventListener('click', () => { sendStep108(); flashBtn('btnStopPattern'); });
       document.getElementById('btnRecord')?.addEventListener('click', punchOut);
       document.getElementById('btnPlayClip')?.addEventListener('click', () => {
@@ -3709,8 +3726,11 @@
           flashBtn('btnGlobalClockReset');
         }
         else if (k === 'x') {
-          document.getElementById('btnStopPattern')?.click();
-          flashBtn('btnStopPattern');
+          if (e.shiftKey) haltPattern();
+          else {
+            sendStep108();
+            flashBtn('btnStopPattern');
+          }
         }
         else if (k === 'escape' || k === 'u') {
           collapseSelection();
