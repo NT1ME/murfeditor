@@ -2552,6 +2552,15 @@
     }
 
 
+
+    function toggleMidiValue(cc, uiOn) {
+      if (cc === 87 || cc === 68) return uiOn ? 0 : 127;
+      return uiOn ? 127 : 0;
+    }
+    function toggleUiOn(cc, midiVal) {
+      if (cc === 87 || cc === 68) return (midiVal | 0) < 64;
+      return (midiVal | 0) >= 64;
+    }
     function snapshotPanel() {
       const panel = Object.assign({}, state.ccs || {});
       document.querySelectorAll('[data-cc]').forEach(el => {
