@@ -56,20 +56,49 @@
 
     /* Header */
     header {
-      display: flex;
-      align-items: center;
-      flex-wrap: wrap;
-      gap: 8px 12px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      grid-template-rows: auto auto;
+      column-gap: 16px;
+      row-gap: 6px;
+      align-items: start;
       padding: 6px 10px;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
     header h1 {
+      grid-column: 1;
+      grid-row: 1 / span 2;
       font-size: 16px;
       font-weight: 600;
       letter-spacing: 0.5px;
       color: var(--accent);
+      padding-right: 8px;
+      white-space: nowrap;
+      align-self: start;
+    }
+    .hdr-tools {
+      grid-column: 2;
+      grid-row: 1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+    }
+    .hdr-trans {
+      grid-column: 2;
+      grid-row: 2;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .midi-cluster {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
     }
     .midi-status {
       display: flex;
@@ -208,7 +237,7 @@
       height: 14vh; min-height: 58px; font-size: 15px;
       align-items: center; justify-content: center; text-align: center;
     }
-    #view-stack .stack-row .key small { display: block; font-size: 12px; margin-top: 2px; }
+    #view-stack .stack-row .key small, #keyboard .key small { display: block; font-size: 12px; margin-top: 2px; opacity: 0.75; }
 
     .tabs {
       display: flex;
@@ -618,7 +647,36 @@
   <div id="app">
     <header>
       <h1>MIDI MuRF Editor</h1>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <div class="hdr-tools">
+        <div class="midi-cluster tgroup" id="midiCluster">
+          <span class="tlabel">MIDI</span>
+          <span id="midiLabel">disconnected</span>
+          <div class="led" id="midiLed"></div>
+          <select id="midiPort" style="max-width:160px">
+            <option value="">Select port…</option>
+          </select>
+          <button id="btnRefreshMidi" title="Refresh MIDI ports">↻</button>
+          <label class="clock-mini">Ch
+            <select id="midiChannel">
+              <option value="1" selected>1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+              <option value="6">6</option>
+              <option value="7">7</option>
+              <option value="8">8</option>
+              <option value="9">9</option>
+              <option value="10">10</option>
+              <option value="11">11</option>
+              <option value="12">12</option>
+              <option value="13">13</option>
+              <option value="14">14</option>
+              <option value="15">15</option>
+              <option value="16">16</option>
+            </select>
+          </label>
+        </div>
         <div id="clockCluster" class="tgroup" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <span class="tlabel">Clock</span>
           <button id="btnClockArm" title="Arm MIDI clock">Clock</button>
@@ -628,25 +686,17 @@
           <button id="btnRecord" title="\">Rec</button>
           <button id="btnPlayClip">Play clip</button>
           <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
-          <select id="divSelect" title="Clock division (CC9)"></select>
+          <select id="divSelect" title="Clock division (CC9) — ⌘, ⌘."></select>
           <div id="beatLed" title="Quarter pulse"></div>
         </div>
-        <div id="resetCluster" style="display:flex;gap:6px;align-items:center">
-          <button id="btnGlobalPatternReset" title="CC90 / Z" data-kbd="Z">Pat Reset</button>
-          <button id="btnHaltPattern" title="CC20 halt / Shift+X" data-kbd="⇧X">Halt</button>
-          <button id="btnStopPattern" title="Note 108 / X" data-kbd="X">Step</button>
-          <button id="btnGlobalClockReset" title="Note 65 / C" data-kbd="C">Clk Reset</button>
-          <button type="button" id="btnMapMode" data-kbd="Map">Map</button>
-          <button type="button" id="btnHelpHints" data-kbd="?">?</button>
-        </div>
       </div>
-      <div class="midi-status">
-        <span id="midiLabel">MIDI: disconnected</span>
-        <div class="led" id="midiLed"></div>
-        <select id="midiPort" style="max-width:160px">
-          <option value="">Select port…</option>
-        </select>
-        <button id="btnRefreshMidi" title="Refresh MIDI ports">↻</button>
+      <div class="hdr-trans" id="resetCluster">
+        <button id="btnGlobalPatternReset" title="CC90 / Z" data-kbd="Z">Pat Reset</button>
+        <button id="btnHaltPattern" title="CC20 halt / Shift+X" data-kbd="⇧X">Halt</button>
+        <button id="btnStopPattern" title="Note 108 / X" data-kbd="X">Step</button>
+        <button id="btnGlobalClockReset" title="Note 65 / C" data-kbd="C">Clk Reset</button>
+        <button type="button" id="btnMapMode" data-kbd="Map">Map</button>
+        <button type="button" id="btnHelpHints" data-kbd="?">?</button>
       </div>
     </header>
 
@@ -671,46 +721,25 @@
                   <!-- filled by JS: 1-24 -->
                 </select>
               </div>
-              <div class="control">
-                <label>MIDI Ch</label>
-                <select id="midiChannel">
-                  <option value="1" selected>1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                  <option value="4">4</option>
-                  <option value="5">5</option>
-                  <option value="6">6</option>
-                  <option value="7">7</option>
-                  <option value="8">8</option>
-                  <option value="9">9</option>
-                  <option value="10">10</option>
-                  <option value="11">11</option>
-                  <option value="12">12</option>
-                  <option value="13">13</option>
-                  <option value="14">14</option>
-                  <option value="15">15</option>
-                  <option value="16">16</option>
-                </select>
-              </div>
             </div>
             <div class="toggle-row">
-              <span>Freq Bass / Mids</span>
+              <span data-kbd="M">Freq Bass / Mids</span>
               <button class="toggle" id="togFreq" data-cc="86" title="CC86"></button>
             </div>
             <div class="toggle-row">
-              <span>LFO On/Off</span>
+              <span data-kbd="L">LFO On/Off</span>
               <button class="toggle" id="togLfo" data-cc="85" title="CC85"></button>
             </div>
             <div class="toggle-row">
-              <span>Bypass</span>
+              <span data-kbd="B">Bypass</span>
               <button class="toggle" id="togBypass" data-cc="87" title="CC87"></button>
             </div>
             <div class="toggle-row">
-              <span>Staccato</span>
+              <span data-kbd="⇧S">Staccato</span>
               <button class="toggle" id="togStaccato" data-cc="68" title="CC68"></button>
             </div>
             <div class="toggle-row">
-              <span>Pattern Clock Sync</span>
+              <span data-kbd="K">Pattern Clock Sync</span>
               <button class="toggle on" id="togClockSync" data-cc="89" title="CC89"></button>
             </div>
           </div>
@@ -1512,9 +1541,13 @@
 
       function bindSliderPair(sl, inp) {
         if (!sl || !inp) return;
+        sl.dataset.sent = String(sl.value);
         sl.addEventListener('input', () => {
           inp.value = sl.value;
-          sendCC(parseInt(sl.dataset.cc, 10), parseInt(sl.value, 10));
+          const v = parseInt(sl.value, 10);
+          if (String(v) === sl.dataset.sent) return;
+          sl.dataset.sent = String(v);
+          sendCC(parseInt(sl.dataset.cc, 10), v);
         });
         const applyNum = () => {
           let v = parseInt(inp.value, 10);
@@ -1522,6 +1555,8 @@
           v = Math.max(0, Math.min(127, v));
           inp.value = v;
           sl.value = v;
+          if (String(v) === sl.dataset.sent) return;
+          sl.dataset.sent = String(v);
           sendCC(parseInt(sl.dataset.cc, 10), v);
         };
         inp.addEventListener('focus', () => inp.select());
@@ -2175,10 +2210,15 @@
         notes.forEach((note, i) => {
           const key = document.createElement('div');
           key.className = 'key' + (notes.length === 8 ? (' band' + (7 - i)) : '');
-          key.textContent = state.perfMode === 'step' ? 'STEP' : noteName(note);
+          if (state.perfMode === 'step') key.textContent = 'STEP';
+          else {
+            const letter = 'ASDFGHJK'[i] || '';
+            key.innerHTML = noteName(note) + '<small>' + letter + '</small>';
+          }
           key.dataset.note = note;
           kb.appendChild(key);
         });
+        applyLatchLights();
       }
 
       const isMono = () => state.notePriority && state.perfMode === 'triggered';
@@ -2309,6 +2349,7 @@
             if (el) el.classList.add('active');
           });
         });
+        applyLatchLights();
       }
       function rowOn(mode, note) {
         const s = stacks[mode];
@@ -2392,6 +2433,12 @@
     }
 
     const perfLatched = new Set();
+    function applyLatchLights() {
+      document.querySelectorAll('.key[data-note]').forEach(el => {
+        const n = parseInt(el.dataset.note, 10);
+        if (perfLatched.has(n)) el.classList.add('active');
+      });
+    }
     function modeOfNote(note) {
       for (const m of ['mute', 'triggered', 'sustained']) {
         if ((NOTE_MAPS[m] || []).includes(note)) return m;
@@ -2585,8 +2632,9 @@
         const v = panel[cc] | 0;
         if (el.tagName === 'INPUT') {
           el.value = v;
+          el.dataset.sent = String(v);
           const wrap = el.closest('.control') || el.parentElement;
-          if (wrap) wrap.querySelectorAll('input').forEach(inp => { inp.value = v; });
+          if (wrap) wrap.querySelectorAll('input').forEach(inp => { inp.value = v; if (inp.classList.contains('cc-slider')) inp.dataset.sent = String(v); });
         } else {
           el.classList.toggle('on', toggleUiOn(parseInt(cc,10), v));
         }
@@ -2811,10 +2859,10 @@
     function pageSections() {
       const tab = activeTab();
       const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect'] };
-      const resetSec = { box: null, els: ['btnGlobalPatternReset', 'btnGlobalClockReset'] };
+      const resetSec = { box: document.getElementById('resetCluster'), els: ['btnGlobalPatternReset', 'btnHaltPattern', 'btnStopPattern', 'btnGlobalClockReset', 'btnMapMode', 'btnHelpHints'] };
       if (tab === 'main') {
         return [
-          { box: null, els: ['midiPort', 'btnRefreshMidi', 'midiChannel'] },
+          { box: document.getElementById('midiCluster'), els: ['midiPort', 'btnRefreshMidi', 'midiChannel'] },
           clockSec, resetSec,
           { box: document.querySelector('#view-main .panel'), els: ['pcPattern', 'togFreq', 'togLfo', 'togBypass', 'togStaccato', 'togClockSync'] },
           { box: document.getElementById('panelMainControls'), els: () => [
@@ -2877,6 +2925,11 @@
 
     function commitIfValueBox(el) {
       if (!el || el.tagName !== 'INPUT') return;
+      if (el.type === 'number' || el.type === 'range') {
+        const sl = el.classList.contains('cc-slider') ? el : el.parentElement && el.parentElement.querySelector('.cc-slider');
+        const now = String(parseInt(el.value, 10) || 0);
+        if (sl && sl.dataset.sent === now) return;
+      }
       el.dispatchEvent(new Event('change', { bubbles: true }));
     }
 
@@ -3590,6 +3643,20 @@
             if (e.shiftKey) document.getElementById('btnSaveProject')?.click();
             else document.getElementById('btnSaveClip')?.click();
           } else document.getElementById('btnSaveLibrary')?.click();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.key === '.')) {
+          e.preventDefault();
+          const sel = document.getElementById('divSelect');
+          if (sel && sel.options.length) {
+            const d = e.key === ',' ? -1 : 1;
+            const n = Math.max(0, Math.min(sel.options.length - 1, sel.selectedIndex + d));
+            if (n !== sel.selectedIndex) {
+              sel.selectedIndex = n;
+              sel.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            focusControl(sel);
+          }
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 'o') {
