@@ -895,8 +895,7 @@
             <button id="btnNoteReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnNotePriority" class="on">Last-note priority: On</button>
             <button id="btnLatch">Latch: Off</button>
-            <button id="btnKeyStep" title="Note 108">Step (X)</button>
-          </div>
+            </div>
         </div>
       </div>
 
@@ -913,8 +912,7 @@
             <button id="btnStackReset">Pattern Clock Reset (Note 65)</button>
             <button id="btnStackPriority" class="on">Last-note priority: On</button>
             <button id="btnStackLatch">Latch: Off</button>
-            <button id="btnStackStep" title="Note 108">Step (X)</button>
-          </div>
+            </div>
         </div>
       </div>
 
@@ -1573,8 +1571,7 @@
           btn.classList.toggle('on');
           const cc = parseInt(btn.dataset.cc, 10);
           const on = btn.classList.contains('on');
-          const invert = (cc === 87 || cc === 68);
-          const val = invert ? (on ? 0 : 127) : (on ? 127 : 0);
+          const val = toggleMidiValue(cc, on);
           sendCC(cc, val);
           setStatus('CC' + cc + ' = ' + (on ? 'ON' : 'OFF'));
         });
@@ -2446,7 +2443,7 @@
       document.getElementById('btnKeyStep')?.addEventListener('click', fire108);
       document.getElementById('btnStackStep')?.addEventListener('click', fire108);
       function down(e) {
-        if (e.metaKey || e.ctrlKey || e.repeat) return;
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.repeat) return;
         const tab = activeTab();
         if (tab !== 'keyboard' && tab !== 'stack') return;
         const tag = (e.target && e.target.tagName) || '';
@@ -2560,7 +2557,7 @@
       document.querySelectorAll('[data-cc]').forEach(el => {
         const cc = String(el.dataset.cc);
         if (el.tagName === 'INPUT') panel[cc] = parseInt(el.value, 10) || 0;
-        else panel[cc] = el.classList.contains('on') ? 127 : 0;
+        else panel[cc] = toggleMidiValue(parseInt(cc,10), el.classList.contains('on'));
       });
       panel.channel = state.channel;
       state.ccs = Object.assign({}, panel);
@@ -2582,7 +2579,7 @@
           const wrap = el.closest('.control') || el.parentElement;
           if (wrap) wrap.querySelectorAll('input').forEach(inp => { inp.value = v; });
         } else {
-          el.classList.toggle('on', v >= 64);
+          el.classList.toggle('on', toggleUiOn(parseInt(cc,10), v));
         }
         /* restore UI; send later via applyPanelMidi */
       });
@@ -2762,9 +2759,18 @@
     }
 
     // ---------- Tabs ----------
+    function restoreTogglesFromCcs() {
+      if (!state.ccs) return;
+      document.querySelectorAll('button.toggle[data-cc]').forEach(el => {
+        const cc = el.dataset.cc;
+        if (state.ccs[cc] == null) return;
+        el.classList.toggle('on', toggleUiOn(parseInt(cc,10), state.ccs[cc]));
+      });
+    }
     function showTab(name) {
       document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+      restoreTogglesFromCcs();
       if (typeof applyKbdHints === 'function') applyKbdHints();
     }
 
@@ -2997,9 +3003,9 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'N', btnStackPriority: 'N', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
+        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnHaltPattern: '⇧X', btnStopPattern: 'X', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'N', btnStackPriority: 'N', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
         btnZoomOut: '−', btnZoomIn: '+',
-        togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: 'S'
+        togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: '⇧S'
       };
       const map = loadDigitMap();
       const inv = {};
@@ -3692,10 +3698,10 @@
             return;
           }
         }
-        if (k === 'b') document.getElementById('togBypass')?.click();
+        if (k === 'b' && !['keyboard','stack','latch'].includes(activeTab())) document.getElementById('togBypass')?.click();
         else if (k === 'l') document.getElementById('togLfo')?.click();
         else if (k === 'm') document.getElementById('togFreq')?.click();
-        else if (k === 's') document.getElementById('togStaccato')?.click();
+        else if (k === 's' && e.shiftKey) { e.preventDefault(); document.getElementById('togStaccato')?.click(); }
         else if (k === 'p') {
           flashBtn('btnSendPattern');
           sendCurrentPattern();
