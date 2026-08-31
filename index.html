@@ -191,6 +191,33 @@
       letter-spacing: 0.04em;
       margin-top: 1px;
     }
+    body.show-hints .toggle[data-kbd]::after {
+      content: "";
+      margin-top: 0;
+      font-size: 0;
+    }
+    .toggle[data-kbd]::before {
+      content: attr(data-kbd);
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      font-weight: 700;
+      letter-spacing: 0;
+      color: #111;
+      opacity: 0;
+      z-index: 2;
+      pointer-events: none;
+      transition: transform 0.15s, opacity 0.15s;
+    }
+    .toggle.on[data-kbd]::before { transform: translateX(20px); }
+    body.show-hints .toggle[data-kbd]::before { opacity: 0.9; }
     #gridHint {
       display: none;
       font-size: 11px;
@@ -680,13 +707,14 @@
         <div id="clockCluster" class="tgroup" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
           <span class="tlabel">Clock</span>
           <button id="btnClockArm" title="Arm MIDI clock">Clock</button>
-          <button id="btnPlay" title="Enter">Play</button>
+          <button id="btnPlay" title="Shift+Enter">Play</button>
           <button id="btnClockStop" title="Shift+Space">Stop Clock</button>
-          <button id="btnContinue" title="Shift+Enter">Cont</button>
+          <button id="btnContinue" title="⌘+Enter">Cont</button>
           <button id="btnRecord" title="\">Rec</button>
           <button id="btnPlayClip">Play clip</button>
           <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
-          <select id="divSelect" title="Clock division (CC9) — ⌘, ⌘."></select>
+          <select id="divSelect" title="Clock division (CC9) — ⌘, ⌘.  Banks: ⌘B  Slots: ⌘1–0"></select>
+          <span id="divBankLabel" class="clock-mini" title="⌘B cycles banks">Straight</span>
           <div id="beatLed" title="Quarter pulse"></div>
         </div>
       </div>
@@ -723,24 +751,24 @@
               </div>
             </div>
             <div class="toggle-row">
-              <span data-kbd="M">Freq Bass / Mids</span>
-              <button class="toggle" id="togFreq" data-cc="86" title="CC86"></button>
+              <span>Freq Bass / Mids</span>
+              <button class="toggle" id="togFreq" data-cc="86" title="CC86" data-kbd="M"></button>
             </div>
             <div class="toggle-row">
-              <span data-kbd="L">LFO On/Off</span>
-              <button class="toggle" id="togLfo" data-cc="85" title="CC85"></button>
+              <span>LFO On/Off</span>
+              <button class="toggle" id="togLfo" data-cc="85" title="CC85" data-kbd="L"></button>
             </div>
             <div class="toggle-row">
-              <span data-kbd="B">Bypass</span>
-              <button class="toggle" id="togBypass" data-cc="87" title="CC87"></button>
+              <span>Bypass</span>
+              <button class="toggle" id="togBypass" data-cc="87" title="CC87" data-kbd="B"></button>
             </div>
             <div class="toggle-row">
-              <span data-kbd="⇧S">Staccato</span>
-              <button class="toggle" id="togStaccato" data-cc="68" title="CC68"></button>
+              <span>Staccato</span>
+              <button class="toggle" id="togStaccato" data-cc="68" title="CC68" data-kbd="⇧S"></button>
             </div>
             <div class="toggle-row">
-              <span data-kbd="K">Pattern Clock Sync</span>
-              <button class="toggle on" id="togClockSync" data-cc="89" title="CC89"></button>
+              <span>Pattern Clock Sync</span>
+              <button class="toggle on" id="togClockSync" data-cc="89" title="CC89" data-kbd="K"></button>
             </div>
           </div>
 
@@ -1018,7 +1046,8 @@
       clock: {
         armed: false, running: false, recArm: false, recording: false, playClip: false,
         bpm: 120, div: 10, tick: 0, timer: null, lastTap: 0, taps: [],
-        take: [], clip: null, clips: {}
+        take: [], clip: null, clips: {},
+        bank: 0, customDivs: [0, 1, 2, 4, 7, 10, 13, 15, 17, 19]
       },
       pattern: {
         slot: 12,          // 1-24
@@ -3146,6 +3175,10 @@
       { name: 'dotted 64th', cc: 118, ticks: 2 },
       { name: '64th', cc: 124, ticks: 1 }
     ];
+    const DIV_STRAIGHT = [0, 1, 2, 4, 7, 10, 13, 15, 17, 19];
+    const DIV_DOTTED = [3, 5, 8, 11, 14, 16, 18, 6, 9, 12];
+    const DIV_BANK_NAMES = ['Straight', 'Dotted/trip', 'Custom'];
+    function defaultCustomDivs() { return DIV_STRAIGHT.slice(); }
 
     function recordEvent(ev) {
       const c = state.clock;
@@ -3187,10 +3220,57 @@
     }
     function applyDivision() {
       const d = CLOCK_DIVS[state.clock.div];
-      if (d) sendCC(9, d.cc);
+      if (d) {
+        sendCC(9, d.cc);
+        recordEvent({ kind: 'cc', cc: 9, val: d.cc });
+      }
       armClockOn();
       if (!state.clock.running) clockPlay(true);
       updateClockReadout();
+    }
+    function currentBankSlots() {
+      const b = state.clock.bank || 0;
+      if (b === 1) return DIV_DOTTED;
+      if (b === 2) return (state.clock.customDivs && state.clock.customDivs.length === 10)
+        ? state.clock.customDivs : defaultCustomDivs();
+      return DIV_STRAIGHT;
+    }
+    function updateBankLabel() {
+      const el = document.getElementById('divBankLabel');
+      if (el) el.textContent = DIV_BANK_NAMES[state.clock.bank || 0];
+    }
+    function setDivisionIndex(i, announce) {
+      i = Math.max(0, Math.min(CLOCK_DIVS.length - 1, i | 0));
+      state.clock.div = i;
+      const sel = document.getElementById('divSelect');
+      if (sel) sel.value = String(i);
+      applyDivision();
+      if (announce) {
+        const d = CLOCK_DIVS[i];
+        setStatus((DIV_BANK_NAMES[state.clock.bank] || 'Div') + ' → ' + (d ? d.name : i));
+      }
+    }
+    function jumpBankSlot(slot) {
+      const list = currentBankSlots();
+      const idx = list[slot];
+      if (idx == null) return;
+      setDivisionIndex(idx, true);
+    }
+    function cycleDivBank() {
+      state.clock.bank = ((state.clock.bank || 0) + 1) % 3;
+      updateBankLabel();
+      setStatus('Division bank: ' + DIV_BANK_NAMES[state.clock.bank]);
+    }
+    function mapCustomSlot(slot) {
+      if (!state.clock.customDivs || state.clock.customDivs.length !== 10) {
+        state.clock.customDivs = defaultCustomDivs();
+      }
+      state.clock.customDivs[slot] = state.clock.div;
+      state.clock.bank = 2;
+      updateBankLabel();
+      const d = CLOCK_DIVS[state.clock.div];
+      const key = slot === 9 ? '0' : String(slot + 1);
+      setStatus('Custom ⌘' + key + ' → ' + (d ? d.name : state.clock.div));
     }
     function clockTick() {
       const c = state.clock;
@@ -3213,7 +3293,18 @@
       else if (ev.kind === 'start') sendRT(0xFA);
       else if (ev.kind === 'cont') sendRT(0xFB);
       else if (ev.kind === 'stop') sendRT(0xFC);
-      else if (ev.kind === 'cc') sendCC(ev.cc, ev.val);
+      else if (ev.kind === 'cc') {
+        sendCC(ev.cc, ev.val);
+        if (ev.cc === 9) {
+          const i = CLOCK_DIVS.findIndex(d => d.cc === ev.val);
+          if (i >= 0) {
+            state.clock.div = i;
+            const s = document.getElementById('divSelect');
+            if (s) s.value = String(i);
+            updateClockReadout();
+          }
+        }
+      }
     }
     function startTimer() {
       stopTimer();
@@ -3295,6 +3386,13 @@
         state.clock.div = 15;
       }
       sel?.addEventListener('change', () => { state.clock.div = parseInt(sel.value, 10); applyDivision(); });
+      sel?.addEventListener('keydown', (e) => {
+        if (/^[0-9]$/.test(e.key) && !e.metaKey && !e.ctrlKey) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+      updateBankLabel();
       const bpmBox = document.getElementById('bpmBox');
       const commitBpm = () => {
         if (!bpmBox) return;
@@ -3390,7 +3488,9 @@
           clipName: document.getElementById('clipSelect')?.value || '',
           library: JSON.parse(localStorage.getItem('murf-library') || '{}'),
           rows: JSON.parse(localStorage.getItem('murf-rows') || '{}'),
-          digits: loadDigitMap()
+          digits: loadDigitMap(),
+          divBank: state.clock.bank || 0,
+          customDivs: (state.clock.customDivs || defaultCustomDivs()).slice()
         };
       }
       function applyProject(p) {
@@ -3411,6 +3511,9 @@
         if (p.library) localStorage.setItem('murf-library', JSON.stringify(p.library));
         if (p.rows) localStorage.setItem('murf-rows', JSON.stringify(p.rows));
         if (p.digits) { writeDigitMap(p.digits); applyKbdHints(); }
+        if (p.customDivs && p.customDivs.length === 10) state.clock.customDivs = p.customDivs.slice();
+        if (p.divBank != null) state.clock.bank = p.divBank;
+        updateBankLabel();
         state.clock.running = false; state.clock.recording = false; state.clock.recArm = false; state.clock.armed = false;
         stopTimer();
         persistSession();
@@ -3479,6 +3582,18 @@
         if ((e.key === '\\' || e.code === 'Backslash') && !isTextEntry(e.target)) {
           e.preventDefault();
           punchOut();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B') && !isTextEntry(e.target)) {
+          e.preventDefault();
+          cycleDivBank();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.altKey && /^[0-9]$/.test(e.key)) {
+          e.preventDefault();
+          const slot = e.key === '0' ? 9 : (parseInt(e.key, 10) - 1);
+          if (state.mapMode) mapCustomSlot(slot);
+          else jumpBankSlot(slot);
           return;
         }
         if (isTextEntry(e.target) && e.key !== 'Tab' && !(e.metaKey || e.ctrlKey)) return;
