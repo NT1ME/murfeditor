@@ -1,4 +1,4 @@
-# MIDI MuRF Editor — Operator Manual (2.9.16)
+# MIDI MuRF Editor — Operator Manual (2.9.17)
 
 Single-file Web MIDI companion for the Moog MF-105M MIDI MuRF. Pattern SysEx, documented CC/PC, performance notes, MIDI clock master, clips, projects, library.
 
