@@ -1,5 +1,4 @@
-
-# MIDI MuRF Editor — Operator Manual (2.9.15)
+# MIDI MuRF Editor — Operator Manual (2.9.16)
 
 Single-file Web MIDI companion for the Moog MF-105M MIDI MuRF. Pattern SysEx, documented CC/PC, performance notes, MIDI clock master, clips, projects, library.
 
@@ -46,7 +45,7 @@ Under that row, aligned with MIDI/Clock: Pat Reset, Halt, Step, Clk Reset, Map, 
 | Option+Tab | Next section |
 | Ctrl/Cmd+Tab | Cycle pages |
 | G | Drop Tab focus. Enter becomes Play. On Pattern, G also focuses the grid |
-| Enter | Armed button: fire it. Else Play (FA). BPM box: commit BPM only |
+| Enter | Armed button: fire it. BPM box: commit BPM only. Never Play. |
 | Esc or U | Collapse step/band selection to the caret |
 
 Typing a name (library save, search) swallows letter shortcuts until you Tab or click out.
@@ -66,8 +65,8 @@ Clock is off when the app opens.
 
 | Key / button | MIDI | Notes |
 |--------------|------|--------|
-| Play / Enter | FA Start | Step 1, run |
-| Cont / Shift+Enter | FB Continue | Same step, run |
+| Play / Shift+Enter | FA Start | Step 1, run |
+| Cont / Cmd+Enter | FB Continue | Same step, run |
 | Stop Clock / Shift+Space | FC Stop | Freeze. Does not punch out a take |
 | Rec / backslash | — | Arm / punch out the clip |
 | Play clip | — | Replay last take over the current grid |
@@ -80,6 +79,23 @@ Clock is off when the app opens.
 | Shift+X / Halt | CC20 | Halt using parked F1 value. Does not rewrite the mix |
 
 Plain comma and period are Pattern length, not Division.
+
+Plain comma and period are Pattern length, not Division.
+
+### Division banks
+
+Three banks. Cmd+B walks Straight → Dotted/trip → Custom → Straight. Label sits next to the Division box.
+
+Cmd+1 is the slowest slot in the live bank. Cmd+0 is the fastest.
+
+Straight: 4 bars, 3 bars, 2 bars, whole, half, quarter, 8th, 16th, 32nd, 64th.
+
+Dotted/trip: dotted whole, dotted half, dotted quarter, dotted 8th, dotted 16th, dotted 32nd, dotted 64th, whole trip, half trip, quarter trip.
+
+Custom: Map on, set the division you want, Cmd+1 through Cmd+0 stores that value in that slot. First launch copies Straight. Saved with the project.
+
+The Division box no longer typeaheads on 1/2/4/8.
+
 
 T on the Clips page is Tap tempo.
 
@@ -237,7 +253,9 @@ Stack Mute lights follow the Keyboard Mute latch.
 
 Records: Mute / Trigger / Sustain notes, Note 65, Note 108, CC90, and FA / FB / FC if you press them.
 
-Does not record: sliders, SysEx dumps, division changes.
+Does not record: sliders or SysEx dumps.
+
+Does record: notes, 65, 108, CC90, FA / FB / FC, and division (CC9).
 
 Backslash arm, Enter starts clock plus take, play, backslash punch out.
 
