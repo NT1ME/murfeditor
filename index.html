@@ -3218,6 +3218,15 @@
       const tog = document.getElementById('togClockSync');
       if (tog) tog.classList.add('on');
     }
+    function bumpBpm(delta) {
+      const next = Math.max(20, Math.min(300, (state.clock.bpm || 120) + delta));
+      state.clock.bpm = next;
+      const box = document.getElementById('bpmBox');
+      if (box) box.value = next;
+      if (state.clock.running) startTimer();
+      updateClockReadout();
+      setStatus('BPM ' + next);
+    }
     function applyDivision() {
       const d = CLOCK_DIVS[state.clock.div];
       if (d) {
@@ -3594,6 +3603,11 @@
           const slot = e.key === '0' ? 9 : (parseInt(e.key, 10) - 1);
           if (state.mapMode) mapCustomSlot(slot);
           else jumpBankSlot(slot);
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && !e.altKey && (e.code === 'BracketLeft' || e.code === 'BracketRight' || e.key === '[' || e.key === ']')) {
+          e.preventDefault();
+          bumpBpm((e.code === 'BracketRight' || e.key === ']') ? 1 : -1);
           return;
         }
         if (isTextEntry(e.target) && e.key !== 'Tab' && !(e.metaKey || e.ctrlKey)) return;
