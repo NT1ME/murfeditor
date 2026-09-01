@@ -258,6 +258,14 @@
       color: #111 !important;
       box-shadow: 0 0 0 2px #e8d9a0;
     }
+    .cell.playhead {
+      box-shadow: inset 0 0 0 2px #f2f2f0;
+      outline: 2px solid #f2f2f0;
+      outline-offset: -2px;
+      z-index: 2;
+    }
+    .cell.playhead.on { filter: brightness(1.15); }
+    body.following #patternGrid { cursor: default; }
     button.pressed, button:active {
       background: #d8d4c8;
       color: #111;
@@ -876,6 +884,7 @@
             <button id="btnSendPattern">Send Pattern</button>
             <button id="btnAutoSend">Auto Send: Off</button>
             <button id="btnSeqWrite">Seq write: Off</button>
+            <button id="btnFollow" title="Step follower / Shift+F">Follow: Off</button>
             <button id="btnUndo">Undo</button>
             <button id="btnRedo">Redo</button>
             <button id="btnClearAll">Clear All</button>
@@ -919,7 +928,7 @@
         <div id="gridHint">
           <div class="hint-row">Band ↑↓    Step ←→    Range ⇧    Length ⌥    Slide ⌘    Ends [ ]    Jump ; '</div>
           <div class="hint-row">Write O    Snap , .    Halt ⇧X    Step X    Pat Z    Clk C    Sync ⇧C</div>
-          <div class="hint-row hint-seq">Seq write N    Stamp Q W E R T Y H J (bands 1–8, toggle)    Space next step</div>
+          <div class="hint-row hint-seq">Seq write N    Stamp Q W E R T Y H J (bands 1–8, toggle)    Space next step    Follow ⇧F</div>
         </div>
 
         <div class="band-meta" id="bandMeta"></div>
@@ -1084,13 +1093,15 @@
       ccs: {}, // 1-16
       autoSend: false,
       seqWrite: false,
+      follow: false,
       latch: false,
       clock: {
         armed: false, running: false, recArm: false, recording: false, playClip: false,
         bpm: 120, div: 10, tick: 0, timer: null, lastTap: 0, taps: [],
         take: [], clip: null, clips: {},
         bank: 0, customDivs: [0, 1, 2, 4, 7, 10, 13, 15, 17, 19],
-        clipMode: 'loop', clipBars: 0
+        clipMode: 'loop', clipBars: 0,
+        seqStep: 0, halted: false
       },
       pattern: {
         slot: 12,          // 1-24
@@ -1292,14 +1303,52 @@
       return 0;
     }
     function haltPattern() {
+      state.clock.halted = true;
       sendCC(20, currentF1());
       flashBtn('btnHaltPattern');
       setStatus('Halt (CC20 @ ' + currentF1() + ')');
+      updatePlayheads();
     }
     function sendStep108() {
+      state.clock.seqStep = (state.clock.seqStep || 0) + 1;
       sendNoteOn(108, 100);
       setTimeout(() => sendNoteOff(108), 50);
       setStatus('Stop pattern (108)');
+      updatePlayheads();
+    }
+    function ticksPerStep() {
+      const d = CLOCK_DIVS[state.clock.div] || CLOCK_DIVS[10];
+      return Math.max(1, d.ticks || 24);
+    }
+    function followerCol(band) {
+      const len = Math.max(1, state.pattern.bands[band].length || 1);
+      return ((state.clock.seqStep || 0) % len) + 1;
+    }
+    function updatePlayheads() {
+      document.querySelectorAll('.cell.playhead').forEach(el => el.classList.remove('playhead'));
+      if (!state.follow) return;
+      for (let b = 0; b < 8; b++) {
+        const col = followerCol(b);
+        const cell = document.querySelector('.cell[data-band="' + b + '"][data-step="' + col + '"]');
+        if (cell) cell.classList.add('playhead');
+      }
+    }
+    function setFollow(on) {
+      state.follow = !!on;
+      document.body.classList.toggle('following', state.follow);
+      const btn = document.getElementById('btnFollow');
+      if (btn) {
+        btn.classList.toggle('on', state.follow);
+        btn.textContent = state.follow ? 'Follow: On' : 'Follow: Off';
+      }
+      if (state.follow) {
+        state.seqWrite = false;
+        const sw = document.getElementById('btnSeqWrite');
+        if (sw) { sw.classList.remove('on'); sw.textContent = 'Seq write: Off'; }
+      }
+      buildGrid();
+      updatePlayheads();
+      setStatus(state.follow ? 'Step follower on — grid locked' : 'Step follower off');
     }
     function sendNoteOn(note, vel = 100) {
       if (state.clock && state.clock.recording) recordEvent({ kind: 'on', note: note & 0x7F, vel: vel & 0x7F });
@@ -1437,8 +1486,9 @@
           cell.dataset.step = s;
           if (state.pattern.bands[b].steps.has(s)) cell.classList.add('on');
           if (s > state.pattern.bands[b].length) cell.classList.add('out');
-          if (state.selectedSteps.includes(s) && state.selectedBands.includes(b)) cell.classList.add('cursor');
-          if (b === state.focusedBand && s === state.focusedStep) cell.classList.add('caret');
+          if (!state.follow && state.selectedSteps.includes(s) && state.selectedBands.includes(b)) cell.classList.add('cursor');
+          if (!state.follow && b === state.focusedBand && s === state.focusedStep) cell.classList.add('caret');
+          if (state.follow && s === followerCol(b)) cell.classList.add('playhead');
           if (s === state.pattern.bands[b].length) {
             const grip = document.createElement('div');
             grip.className = 'len-grip';
@@ -1531,6 +1581,7 @@
     }
 
     function onCellPointer(e) {
+      if (state.follow) return;
       e.preventDefault();
       const band = parseInt(e.target.dataset.band, 10);
       const step = parseInt(e.target.dataset.step, 10);
@@ -1689,8 +1740,11 @@
 
       document.getElementById('btnPatternReset').addEventListener('click', () => {
         sendCC(90, 127);
+        state.clock.seqStep = 0;
+        state.clock.halted = false;
         flashBtn('btnPatternReset');
         setStatus('Pattern Reset (CC90)');
+        updatePlayheads();
       });
     }
 
@@ -1737,6 +1791,7 @@
       });
 
       
+      document.getElementById('btnFollow')?.addEventListener('click', () => setFollow(!state.follow));
       document.getElementById('btnSeqWrite').addEventListener('click', () => {
         state.seqWrite = !state.seqWrite;
         const b = document.getElementById('btnSeqWrite');
@@ -2648,12 +2703,18 @@
     function initGlobalResets() {
       document.getElementById('btnGlobalPatternReset').addEventListener('click', () => {
         sendCC(90, 127);
+        state.clock.seqStep = 0;
+        state.clock.halted = false;
         setStatus('Pattern Reset (CC90)');
+        updatePlayheads();
       });
       document.getElementById('btnGlobalClockReset').addEventListener('click', () => {
         sendNoteOn(65, 100);
         setTimeout(() => sendNoteOff(65), 50);
+        state.clock.seqStep = 0;
+        state.clock.halted = false;
         setStatus('Clock Reset (Note 65)');
+        updatePlayheads();
       });
     }
 
@@ -2951,7 +3012,7 @@
         return [
           clockSec, resetSec,
           { box: null, els: ['patternSlot', 'patternLfo'] },
-          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnSeqWrite', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
+          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnSeqWrite', 'btnFollow', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
           { box: document.querySelector('.tgroup.set'), els: () => [document.getElementById('btnSelectAllBands'), document.getElementById('btnClearBandSel'), ...document.querySelectorAll('.tgroup.set [data-len]')] },
           { box: document.querySelector('.tgroup.fit'), els: () => [...document.querySelectorAll('.tgroup.fit [data-fit]')] },
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
@@ -3396,6 +3457,13 @@
       const c = state.clock;
       if (!c.running) return;
       c.tick++;
+      if (!c.halted) {
+        const tps = ticksPerStep();
+        if (tps && c.tick % tps === 0) {
+          c.seqStep = (c.seqStep || 0) + 1;
+          if (state.follow) updatePlayheads();
+        }
+      }
       const led = document.getElementById('beatLed');
       if (led) led.classList.toggle('on', c.running && (c.tick % 24) < 2);
       if (c.armed && state.output) {
@@ -3466,7 +3534,7 @@
       const c = state.clock;
       armClockOn();
       c.running = true;
-      if (fromStart) c.tick = 0;
+      if (fromStart) { c.tick = 0; c.seqStep = 0; c.halted = false; }
       if (c.recArm && !c.recording && !c.playClip) {
         c.recording = true;
         c.take = [];
@@ -4071,7 +4139,10 @@
         }
         else if (k === 'a' && activeTab() !== 'keyboard' && activeTab() !== 'stack') document.getElementById('btnAutoSend')?.click();
         else if (k === 'i') document.getElementById('btnInvert')?.click();
-        else if (k === 'f') document.getElementById('btnFlip')?.click();
+        else if (k === 'f') {
+          if (e.shiftKey) { e.preventDefault(); setFollow(!state.follow); }
+          else document.getElementById('btnFlip')?.click();
+        }
         else if (k === 't') {
           if (activeTab() === 'clock') document.getElementById('btnTapTempo')?.click();
         }
