@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
-  <title>MIDI MuRF Editor</title>
+  <title>MF-105M Virtual Controller</title>
   <style>
     :root {
       --bg: #0c0c0e;
@@ -70,13 +70,22 @@
     header h1 {
       grid-column: 1;
       grid-row: 1 / span 2;
-      font-size: 16px;
+      font-size: 13px;
       font-weight: 600;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.6px;
       color: var(--accent);
-      padding-right: 8px;
-      white-space: nowrap;
-      align-self: start;
+      padding-right: 10px;
+      line-height: 1.25;
+      align-self: center;
+      max-width: 132px;
+    }
+    header h1 small {
+      display: block;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.4px;
+      color: var(--text-dim);
+      margin-top: 3px;
     }
     .hdr-tools {
       grid-column: 2;
@@ -739,7 +748,7 @@
 <body>
   <div id="app">
     <header>
-      <h1>MIDI MuRF Editor</h1>
+      <h1>MF-105M<small>Virtual Controller</small></h1>
       <div class="hdr-tools">
         <div class="midi-cluster tgroup" id="midiCluster">
           <span class="tlabel">MIDI</span>
@@ -777,8 +786,9 @@
             <button id="btnPlay" title="Shift+Enter">Play</button>
             <button id="btnClockStop" title="Shift+Space">Stop Clock</button>
             <button id="btnContinue" title="⌘+Enter">Cont</button>
+            <button id="btnPauseAll" title="Halt + stop clock / ⌥Space" data-kbd="⌥Space">Pause all</button>
             <button id="btnRecord" title="\">Rec</button>
-            <button id="btnPlayClip" title="Start or stop the take">Play clip</button>
+            <button id="btnPlayClip" title="Play clip / ⌘⇧Enter" data-kbd="⌘⇧↵">Play clip</button>
             <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
             <select id="divSelect" title="Clock division (CC9) — ⌘, ⌘.  Banks: ⌘B  Slots: ⌘1–0"></select>
             <span id="divBankLabel" class="clock-mini" title="⌘B cycles banks">Straight</span>
@@ -800,6 +810,7 @@
         <button id="btnHaltPattern" title="CC20 halt / Shift+X" data-kbd="⇧X">Halt</button>
         <button id="btnStopPattern" title="Note 108 / X" data-kbd="X">Step</button>
         <button id="btnGlobalClockReset" title="Note 65 / C" data-kbd="C">Clk Reset</button>
+        <button id="btnResetAll" title="Halt + stop + clip off + pattern to 1 / ⌥Z" data-kbd="⌥Z">Reset all</button>
         <button type="button" id="btnMapMode" data-kbd="Map">Map</button>
         <button type="button" id="btnHelpHints" data-kbd="?">?</button>
       </div>
@@ -916,7 +927,7 @@
             <button id="btnSendPattern">Send Pattern</button>
             <button id="btnAutoSend">Auto Send: Off</button>
             <button id="btnSeqWrite">Seq write: Off</button>
-            <button id="btnFollow" title="Step follower / Shift+F">Follow: Off</button>
+            <button id="btnFollow" title="Step follower / Shift+F" data-kbd="⇧F">Follow: Off</button>
             <button id="btnUndo">Undo</button>
             <button id="btnRedo">Redo</button>
             <button id="btnClearAll">Clear All</button>
@@ -1346,6 +1357,32 @@
       flashBtn('btnHaltPattern');
       setStatus('Halt (CC20 @ ' + currentF1() + ')');
       updatePlayheads();
+    }
+    function pauseAll() {
+      haltPattern();
+      clockStopDevice();
+      flashBtn('btnPauseAll');
+      setStatus('Pause all — Halt + clock stopped');
+    }
+    function resetAll() {
+      haltPattern();
+      clockStopDevice();
+      stopClipPlayback();
+      sendCC(90, 127);
+      state.clock.seqStep = 0;
+      state.clock.playClip = false;
+      flashBtn('btnResetAll');
+      setStatus('Reset all');
+      updatePlayheads();
+      updateClockReadout();
+    }
+    function unstickPerfUi() {
+      if (typeof perfHeld !== 'undefined') perfHeld.clear();
+      document.querySelectorAll('#keyboard .key, #view-stack .key').forEach(el => {
+        const n = parseInt(el.dataset.note, 10);
+        if (typeof perfLatched !== 'undefined' && perfLatched.has(n)) return;
+        el.classList.remove('active');
+      });
     }
     function sendStep108() {
       state.clock.seqStep = (state.clock.seqStep || 0) + 1;
@@ -3008,6 +3045,7 @@
       if (name === 'pattern' && typeof window._fitGrid === 'function') {
         setTimeout(() => window._fitGrid(state.visibleSteps || 64), 40);
       }
+      if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
 
     function cycleAppTab(dir) {
@@ -3037,8 +3075,8 @@
 
     function pageSections() {
       const tab = activeTab();
-      const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect', 'btnClipLoop', 'btnClipOnce', 'btnClipHalt'] };
-      const resetSec = { box: document.getElementById('resetCluster'), els: ['btnGlobalPatternReset', 'btnHaltPattern', 'btnStopPattern', 'btnGlobalClockReset', 'btnMapMode', 'btnHelpHints'] };
+      const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnPauseAll', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect', 'btnClipLoop', 'btnClipOnce', 'btnClipHalt'] };
+      const resetSec = { box: document.getElementById('resetCluster'), els: ['btnGlobalPatternReset', 'btnHaltPattern', 'btnStopPattern', 'btnGlobalClockReset', 'btnResetAll', 'btnMapMode', 'btnHelpHints'] };
       if (tab === 'main') {
         return [
           { box: document.getElementById('midiCluster'), els: ['midiPort', 'btnRefreshMidi', 'midiChannel'] },
@@ -3244,7 +3282,7 @@
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
         btnSelectAllBands: '⌘A',
-        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnHaltPattern: '⇧X', btnStopPattern: 'X', btnGlobalClockReset: 'C', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'N', btnStackPriority: 'N', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
+        btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnPauseAll: '⌥Space', btnResetAll: '⌥Z', btnPlayClip: '⌘⇧↵', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnHaltPattern: '⇧X', btnStopPattern: 'X', btnGlobalClockReset: 'C', btnFollow: '⇧F', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'N', btnStackPriority: 'N', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
         btnZoomOut: '−', btnZoomIn: '+',
         togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: '⇧S'
       };
@@ -3354,15 +3392,20 @@
       const c = state.clock;
       const bar = document.getElementById('clipProgressBar');
       const read = document.getElementById('clipProgressRead');
-      const len = clipDurationTicks(c.clip);
-      const t = c.playClip ? c.tick : 0;
+      const recFixed = c.recording && c.clipBars > 0;
+      const recLen = recFixed ? c.clipBars * 96 : 0;
+      const playLen = c.playClip && c.clip ? clipDurationTicks(c.clip) : 0;
+      const len = recFixed ? recLen : playLen;
+      const active = recFixed || c.playClip;
+      const t = active ? c.tick : 0;
       const pct = len ? Math.max(0, Math.min(100, (t / len) * 100)) : 0;
-      if (bar) bar.style.width = (c.playClip ? pct : 0) + '%';
+      if (bar) bar.style.width = (active ? pct : 0) + '%';
       if (read) {
-        if (!c.clip) read.textContent = 'clip —';
+        if (recFixed) read.textContent = (t / 96).toFixed(2) + ' / ' + c.clipBars.toFixed(2) + ' bars rec';
+        else if (!c.clip) read.textContent = 'clip —';
         else {
           const bars = (t / 96);
-          const total = len / 96;
+          const total = (playLen || 96) / 96;
           read.textContent = (c.playClip ? bars.toFixed(2) : '0.00') + ' / ' + total.toFixed(2) + ' bars';
         }
       }
@@ -3428,6 +3471,7 @@
       }
       updateClockReadout();
       if (state.follow) updatePlayheads();
+      if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
     function currentBankSlots() {
       const b = state.clock.bank || 0;
@@ -3520,10 +3564,11 @@
         else updateClipProgress();
       }
       if (c.recording) {
+        updateClipProgress();
         if (c.clipBars > 0 && c.tick >= c.clipBars * 96) {
           punchOut();
           haltPattern();
-          clockStop();
+          clockStopDevice();
           setStatus('Fixed take ended — Halt');
         } else if (c.tick > 24 * 24 * 64) punchOut();
       }
@@ -3685,6 +3730,8 @@
       document.getElementById('btnPlay')?.addEventListener('click', () => clockPlay(true));
       document.getElementById('btnContinue')?.addEventListener('click', () => clockPlay(false));
       document.getElementById('btnClockStop')?.addEventListener('click', clockStopDevice);
+      document.getElementById('btnPauseAll')?.addEventListener('click', pauseAll);
+      document.getElementById('btnResetAll')?.addEventListener('click', resetAll);
       document.getElementById('btnHaltPattern')?.addEventListener('click', haltPattern);
       document.getElementById('btnStopPattern')?.addEventListener('click', () => { sendStep108(); flashBtn('btnStopPattern'); });
       document.getElementById('btnRecord')?.addEventListener('click', punchOut);
@@ -3867,6 +3914,11 @@
           applyDivision();
           return;
         }
+        if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && e.shiftKey && !isTextEntry(e.target)) {
+          e.preventDefault();
+          document.getElementById('btnPlayClip')?.click();
+          return;
+        }
         if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !isTextEntry(e.target)) {
           e.preventDefault();
           clockPlay(false);
@@ -3877,9 +3929,19 @@
           clockPlay(true);
           return;
         }
+        if (e.code === 'Space' && e.altKey && !isTextEntry(e.target)) {
+          e.preventDefault();
+          pauseAll();
+          return;
+        }
         if (e.code === 'Space' && e.shiftKey && !isTextEntry(e.target)) {
           e.preventDefault();
           clockStopDevice();
+          return;
+        }
+        if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'z' || e.key === 'Z') && !isTextEntry(e.target)) {
+          e.preventDefault();
+          resetAll();
           return;
         }
         if ((e.key === '\\' || e.code === 'Backslash') && !isTextEntry(e.target)) {
