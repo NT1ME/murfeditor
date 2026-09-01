@@ -275,7 +275,43 @@
       width: 0;
       background: #c4b48a;
     }
-    #clipProgressRead { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+    #clipProgressRead, #chainProgressRead { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+    #chainProgressWrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 160px;
+      flex: 1;
+    }
+    #chainProgress {
+      flex: 1;
+      height: 8px;
+      background: #2a2a30;
+      border-radius: 4px;
+      overflow: hidden;
+      min-width: 80px;
+    }
+    #chainProgress > span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: #7dffb0;
+    }
+    .pl-row {
+      display: grid;
+      grid-template-columns: 36px 88px 1fr 72px 70px 1fr;
+      gap: 6px;
+      align-items: center;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .pl-row.now { background: #1e2a1e; }
+    .pl-row.disabled { opacity: 0.35; pointer-events: none; }
+    .pl-row label { font-size: 11px; color: var(--text-dim); }
+    .pl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .pl-flag { font-size: 11px; color: var(--text-dim); }
+    .pl-flag.cut { color: #fb923c; }
+    .pl-flag.clean { color: #4ade80; }
     #clockCluster { flex-direction: column; align-items: stretch; }
     #clockRow1, #clockRow2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     button.map-pick { outline: 2px solid #6ea8ff; }
@@ -804,6 +840,10 @@
               <div id="clipProgress"><span id="clipProgressBar"></span></div>
               <span id="clipProgressRead">clip —</span>
             </div>
+            <div id="chainProgressWrap">
+              <div id="chainProgress"><span id="chainProgressBar"></span></div>
+              <span id="chainProgressRead">chain —</span>
+            </div>
           </div>
         </div>
       </div>
@@ -824,6 +864,7 @@
       <button class="tab" data-tab="keyboard">Keyboard</button>
       <button class="tab" data-tab="stack">Stack</button>
       <button class="tab" data-tab="clock">Clips</button>
+      <button class="tab" data-tab="playlist">Playlist</button>
     </div>
 
     <main>
@@ -1098,6 +1139,47 @@
         </div>
       </div>
 
+      <div class="view" id="view-playlist">
+        <div class="panel">
+          <h2>Playlist</h2>
+          <p style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
+            Dump fills slots (SysEx only). Chain ping-pongs A/B: Set chain dumps row 1, Play hands off with PC + Start. Rest rows Halt and keep the clock.
+          </p>
+          <div class="pl-toolbar">
+            <button type="button" id="btnPlDump" class="on">Dump</button>
+            <button type="button" id="btnPlChain">Chain</button>
+            <label>Rows
+              <select id="plRowCount"></select>
+            </label>
+            <label>Slot A
+              <select id="plSlotA"></select>
+            </label>
+            <label>Slot B
+              <select id="plSlotB"></select>
+            </label>
+            <button type="button" id="btnSetChain">Set chain</button>
+            <button type="button" id="btnPlSendRow">Send this row</button>
+            <button type="button" id="btnPlSendAll">Send all rows</button>
+          </div>
+          <div class="pl-toolbar">
+            <button type="button" id="btnPlLoop" class="on">Loop</button>
+            <button type="button" id="btnPlOnce">Once</button>
+            <button type="button" id="btnPlHalt">Once + Halt</button>
+            <label>Chain clip
+              <select id="plClipSelect"><option value="">— none —</option></select>
+            </label>
+            <label>Lists
+              <select id="plListSelect"><option value="">— lists —</option></select>
+            </label>
+            <button type="button" id="btnPlSaveList">Save list</button>
+            <button type="button" id="btnPlLoadList">Load list</button>
+            <button type="button" id="btnPlDeleteList">Delete list</button>
+          </div>
+          <div id="plNowRead" class="pl-flag" style="margin-bottom:8px">chain idle</div>
+          <div id="plRows"></div>
+        </div>
+      </div>
+
     </main>
 
     <div class="status-bar" id="status">Ready</div>
@@ -1172,7 +1254,21 @@
       visibleSteps: 64,
       perfMode: 'triggered',
       notePriority: true,
-      lastTabId: null
+      lastTabId: null,
+      playlist: {
+        mode: 'dump',
+        rowCount: 4,
+        rows: [],
+        slotA: 12,
+        slotB: 24,
+        setChain: false,
+        playMode: 'loop',
+        clipName: '',
+        running: false,
+        rowIndex: 0,
+        ping: 'A',
+        preloaded: false
+      }
     };
 
     const SESSION_KEY = 'murf-session-v27';
@@ -1370,11 +1466,12 @@
       haltPattern();
       clockStopDevice();
       stopClipPlayback();
+      midiPanic();
       sendCC(90, 127);
       state.clock.seqStep = 0;
       state.clock.playClip = false;
       flashBtn('btnResetAll');
-      setStatus('Reset all');
+      setStatus('Reset all + notes off');
       updatePlayheads();
       updateClockReadout();
     }
@@ -1438,6 +1535,18 @@
       if (state.clock && state.clock.recording) recordEvent({ kind: 'off', note: note & 0x7F });
       if (!state.output) return;
       state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
+    }
+    function midiPanic() {
+      if (!state.output) return;
+      const ch = midiChannelByte();
+      for (let n = 36; n <= 108; n++) {
+        try { state.output.send([0x80 | ch, n, 0]); } catch (e) {}
+      }
+      try {
+        if (typeof perfHeld !== 'undefined') perfHeld.clear();
+        if (typeof perfLatched !== 'undefined') perfLatched.clear();
+      } catch (e) {}
+      document.querySelectorAll('#keyboard .key.active, #view-stack .key.active').forEach(el => el.classList.remove('active'));
     }
 
     function sendSysex(bytes) {
@@ -3574,6 +3683,7 @@
           setStatus('Fixed take ended — Halt');
         } else if (c.tick > 24 * 24 * 64) punchOut();
       }
+      if (typeof playlistOnTick === 'function') playlistOnTick();
     }
     function playClipEvent(ev) {
       if (ev.kind === 'on') { if (state.output) state.output.send([0x90 | midiChannelByte(), ev.note, ev.vel || 100]); }
@@ -3647,6 +3757,7 @@
       startTimer();
       updateClockReadout();
       setStatus(fromStart ? 'Play' : 'Continue');
+      if (typeof playlistOnPlay === 'function') playlistOnPlay(fromStart);
     }
     function startClipPlayback() {
       const c = state.clock;
@@ -3673,6 +3784,7 @@
       stopTimer();
       updateClockReadout();
       setStatus('Clock stop');
+      if (state.playlist) state.playlist.running = false;
     }
     function punchOut() {
       const c = state.clock;
@@ -4404,6 +4516,545 @@
       });
     }
 
+    const PLAYLIST_KEY = 'murf-playlist-library';
+    const LEGAL_SLOTS = [2,3,4,5,6,7,8,9,10,11,12,14,15,16,17,18,19,20,21,22,23,24];
+    function emptyPlRow() {
+      return { type: 'pattern', patternName: '', slot: 12, bars: 4 };
+    }
+    function ensurePlRows() {
+      const p = state.playlist;
+      if (!p.rows || !p.rows.length) p.rows = Array.from({ length: 22 }, emptyPlRow);
+      while (p.rows.length < 22) p.rows.push(emptyPlRow());
+    }
+    function loadListLibrary() {
+      try { return JSON.parse(localStorage.getItem(PLAYLIST_KEY) || '{}'); } catch (_) { return {}; }
+    }
+    function writeListLibrary(lib) {
+      localStorage.setItem(PLAYLIST_KEY, JSON.stringify(lib));
+    }
+    function longestFromHex(hex) {
+      try {
+        const bytes = hexToBytes(hex);
+        let payload = '';
+        for (let i = 4; i < bytes.length - 1; i++) payload += String.fromCharCode(bytes[i]);
+        let max = 1;
+        for (let i = 0; i < 8; i++) {
+          const field = payload.slice(6 + i * 32, 6 + (i + 1) * 32);
+          if (field.length < 30) continue;
+          const len = parseInt(field.slice(28, 30), 16) || 1;
+          if (len > max) max = len;
+        }
+        return max;
+      } catch (_) { return 16; }
+    }
+    function sysexForName(name, slot) {
+      const item = loadLibrary()[name];
+      if (!item || !item.hex) return null;
+      const bytes = new Uint8Array(hexToBytes(item.hex));
+      if (bytes.length >= 10 && bytes[0] === 0xF0) {
+        const nn = Number(slot).toString(16).toUpperCase().padStart(2, '0');
+        bytes[8] = nn.charCodeAt(0);
+        bytes[9] = nn.charCodeAt(1);
+      }
+      return bytes;
+    }
+    function dumpNameToSlot(name, slot) {
+      const bytes = sysexForName(name, slot);
+      if (!bytes) { setStatus('No pattern: ' + name); return false; }
+      sendSysex(bytes);
+      return true;
+    }
+    function pcToSlot(slot) {
+      sendPC((slot | 0) - 1);
+    }
+    function formatMusical(ticks) {
+      const bars = Math.floor(ticks / 96);
+      let rem = ticks % 96;
+      const beats = Math.floor(rem / 24);
+      rem %= 24;
+      const six = Math.floor(rem / 6);
+      const extra = rem % 6;
+      const bits = [];
+      bits.push(bars + (bars === 1 ? ' bar' : ' bars'));
+      if (beats) bits.push(beats + (beats === 1 ? ' beat' : ' beats'));
+      if (six) bits.push(six + ' 16th');
+      if (extra) bits.push(extra + ' tick');
+      return bits.join(' + ');
+    }
+    function rowCycleInfo(row) {
+      if (!row || row.type === 'rest' || !row.patternName) {
+        return { ticks: 0, text: '—', flag: '', clean: true };
+      }
+      const item = loadLibrary()[row.patternName];
+      const longest = item ? longestFromHex(item.hex) : 16;
+      const tps = ticksPerStep();
+      const cyc = Math.max(1, longest * tps);
+      const want = Math.max(1, row.bars | 0) * 96;
+      const clean = want % cyc === 0;
+      const cycles = want / cyc;
+      let flag;
+      if (clean) flag = Math.round(cycles) + ' clean cycle' + (Math.round(cycles) === 1 ? '' : 's');
+      else {
+        const cutStep = Math.floor((want % cyc) / tps) + 1;
+        flag = 'cuts at step ' + cutStep;
+      }
+      return { ticks: cyc, text: '1 cycle = ' + formatMusical(cyc), flag: flag, clean: clean, longest: longest };
+    }
+    function chainTotalBars() {
+      const p = state.playlist;
+      let n = 0;
+      for (let i = 0; i < p.rowCount; i++) n += Math.max(1, (p.rows[i] && p.rows[i].bars) || 4);
+      return n;
+    }
+    function chainTotalTicks() { return chainTotalBars() * 96; }
+    function rowStartTick(idx) {
+      const p = state.playlist;
+      let t = 0;
+      for (let i = 0; i < idx && i < p.rowCount; i++) t += Math.max(1, p.rows[i].bars || 4) * 96;
+      return t;
+    }
+    function fillSlotSelect(sel, value) {
+      if (!sel) return;
+      const cur = String(value || sel.value || 12);
+      sel.innerHTML = '';
+      LEGAL_SLOTS.forEach(s => {
+        const o = document.createElement('option');
+        o.value = s;
+        o.textContent = s + (s <= 12 ? ' Bass' : ' Mids');
+        sel.appendChild(o);
+      });
+      sel.value = LEGAL_SLOTS.includes(+cur) ? cur : '12';
+    }
+    function fillPatternSelect(sel, value) {
+      if (!sel) return;
+      const lib = loadLibrary();
+      const names = Object.keys(lib).sort((a, b) => a.localeCompare(b));
+      sel.innerHTML = '<option value="">— pattern —</option>';
+      names.forEach(n => {
+        const o = document.createElement('option');
+        o.value = n;
+        o.textContent = n;
+        sel.appendChild(o);
+      });
+      if (value && lib[value]) sel.value = value;
+    }
+    function usedDumpSlots(except) {
+      const p = state.playlist;
+      const used = new Set();
+      for (let i = 0; i < p.rowCount; i++) {
+        if (i === except) continue;
+        const r = p.rows[i];
+        if (r && r.type === 'pattern' && r.slot) used.add(+r.slot);
+      }
+      return used;
+    }
+    function renderPlaylist() {
+      ensurePlRows();
+      const p = state.playlist;
+      const box = document.getElementById('plRows');
+      if (!box) return;
+      const used = usedDumpSlots(-1);
+      box.innerHTML = '';
+      for (let i = 0; i < 22; i++) {
+        const row = p.rows[i];
+        const div = document.createElement('div');
+        div.className = 'pl-row' + (i >= p.rowCount ? ' disabled' : '') + (p.running && p.rowIndex === i ? ' now' : '');
+        const info = rowCycleInfo(row);
+        const slotDisabled = p.mode === 'chain';
+        const slotVal = p.mode === 'chain' ? ((i % 2 === 0) ? p.slotA : p.slotB) : row.slot;
+        div.innerHTML =
+          '<span>R' + (i + 1) + '</span>' +
+          '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest</option></select>' +
+          '<select data-pl="pat" data-i="' + i + '"></select>' +
+          '<input data-pl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" style="width:56px">' +
+          '<select data-pl="slot" data-i="' + i + '"' + (slotDisabled ? ' disabled' : '') + '></select>' +
+          '<span class="pl-flag ' + (info.clean ? 'clean' : 'cut') + '">' + (row.type === 'rest' ? 'rest ' + (row.bars || 4) + ' bars' : info.text + ' · ' + info.flag) + '</span>';
+        box.appendChild(div);
+        const typeSel = div.querySelector('[data-pl="type"]');
+        typeSel.value = row.type || 'pattern';
+        const patSel = div.querySelector('[data-pl="pat"]');
+        fillPatternSelect(patSel, row.patternName);
+        const slotSel = div.querySelector('[data-pl="slot"]');
+        fillSlotSelect(slotSel, slotVal);
+        if (p.mode === 'dump') {
+          const taken = usedDumpSlots(i);
+          Array.from(slotSel.options).forEach(o => {
+            if (taken.has(+o.value) && +o.value !== +row.slot) o.disabled = true;
+          });
+        }
+      }
+      updateChainChrome();
+    }
+    function updateChainChrome() {
+      const p = state.playlist;
+      document.getElementById('btnPlDump')?.classList.toggle('on', p.mode === 'dump');
+      document.getElementById('btnPlChain')?.classList.toggle('on', p.mode === 'chain');
+      document.getElementById('btnSetChain')?.classList.toggle('on', p.setChain);
+      document.getElementById('btnPlLoop')?.classList.toggle('on', p.playMode === 'loop');
+      document.getElementById('btnPlOnce')?.classList.toggle('on', p.playMode === 'once');
+      document.getElementById('btnPlHalt')?.classList.toggle('on', p.playMode === 'halt');
+      const a = document.getElementById('plSlotA');
+      const b = document.getElementById('plSlotB');
+      if (a) a.disabled = p.mode !== 'chain';
+      if (b) b.disabled = p.mode !== 'chain';
+      document.getElementById('btnSetChain').disabled = p.mode !== 'chain';
+      document.getElementById('btnPlSendAll').disabled = p.mode !== 'dump';
+      document.getElementById('btnPlSendRow').disabled = p.mode !== 'dump';
+      const tot = chainTotalBars();
+      const read = document.getElementById('chainProgressRead');
+      const bar = document.getElementById('chainProgressBar');
+      const now = document.getElementById('plNowRead');
+      if (!p.running) {
+        if (read) read.textContent = 'chain ' + tot + ' bars';
+        if (bar) bar.style.width = '0%';
+        if (now) now.textContent = p.setChain ? 'chain set — row 1 on slot ' + p.slotA : 'chain idle · ' + tot + ' bars';
+      }
+    }
+    function playlistOnTick() {
+      const p = state.playlist;
+      if (!p.running) return;
+      const c = state.clock;
+      const total = chainTotalTicks();
+      const barEl = document.getElementById('chainProgressBar');
+      const read = document.getElementById('chainProgressRead');
+      const now = document.getElementById('plNowRead');
+      const t = c.tick;
+      const pct = total ? Math.max(0, Math.min(100, (t / total) * 100)) : 0;
+      if (barEl) barEl.style.width = pct + '%';
+      let acc = 0;
+      let idx = p.rowCount - 1;
+      for (let i = 0; i < p.rowCount; i++) {
+        const len = Math.max(1, p.rows[i].bars || 4) * 96;
+        if (t < acc + len) { idx = i; break; }
+        acc += len;
+      }
+      const row = p.rows[idx];
+      const rowTick = t - rowStartTick(idx);
+      const rowBars = Math.max(1, row.bars || 4);
+      const barInRow = Math.floor(rowTick / 96) + 1;
+      const barInChain = Math.floor(t / 96) + 1;
+      if (now) now.textContent = 'row ' + (idx + 1) + ' · bar ' + barInRow + '/' + rowBars + ' · chain bar ' + barInChain + '/' + chainTotalBars();
+      if (read) read.textContent = barInChain + ' / ' + chainTotalBars() + ' bars';
+
+      if (idx !== p.rowIndex) {
+        p.rowIndex = idx;
+        p.preloaded = false;
+        enterPlaylistRow(idx);
+        renderPlaylist();
+      }
+      const lastBarStart = (rowBars - 1) * 96;
+      if (!p.preloaded && rowTick >= lastBarStart) {
+        preloadNextRow(idx);
+        p.preloaded = true;
+      }
+      if (t >= total) finishPlaylist();
+    }
+    function enterPlaylistRow(idx) {
+      const p = state.playlist;
+      const row = p.rows[idx];
+      if (!row) return;
+      if (row.type === 'rest' || !row.patternName) {
+        haltPattern();
+        setStatus('Rest row ' + (idx + 1));
+        return;
+      }
+      const slot = (idx % 2 === 0) ? p.slotA : p.slotB;
+      pcToSlot(slot);
+      sendRT(0xFA);
+      state.clock.halted = false;
+      state.clock.seqStep = 0;
+      setStatus('Chain → slot ' + slot + ' · ' + row.patternName);
+    }
+    function preloadNextRow(idx) {
+      const p = state.playlist;
+      if (p.mode !== 'chain') return;
+      let next = idx + 1;
+      if (next >= p.rowCount) {
+        if (p.playMode !== 'loop') return;
+        next = 0;
+      }
+      const row = p.rows[next];
+      if (!row || row.type === 'rest' || !row.patternName) return;
+      const slot = (next % 2 === 0) ? p.slotA : p.slotB;
+      dumpNameToSlot(row.patternName, slot);
+      setStatus('Preload ' + row.patternName + ' → slot ' + slot);
+    }
+    function finishPlaylist() {
+      const p = state.playlist;
+      if (p.playMode === 'loop') {
+        state.clock.tick = 0;
+        p.rowIndex = 0;
+        p.preloaded = false;
+        enterPlaylistRow(0);
+        preloadNextRow(0);
+        return;
+      }
+      p.running = false;
+      if (p.playMode === 'halt') {
+        haltPattern();
+        clockStopDevice();
+        setStatus('Chain ended — Halt');
+      } else {
+        setStatus('Chain ended — last pattern keeps playing');
+      }
+      updateChainChrome();
+    }
+    function playlistRowsReady() {
+      const p = state.playlist;
+      for (let i = 0; i < p.rowCount; i++) {
+        const r = p.rows[i];
+        if (!r) return false;
+        if (r.type === 'rest') continue;
+        if (r.type === 'pattern' && r.patternName) continue;
+        return false;
+      }
+      return true;
+    }
+    function setChainNow() {
+      const p = state.playlist;
+      if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
+      if (!p.slotA) { setStatus('Pick slot A'); return; }
+      const r0 = p.rows[0];
+      if (!r0 || r0.type !== 'pattern' || !r0.patternName) { setStatus('Row 1 needs a pattern'); return; }
+      if (!playlistRowsReady()) { setStatus('Every row in the count must be Pattern or Rest'); return; }
+      dumpNameToSlot(r0.patternName, p.slotA);
+      pcToSlot(p.slotA);
+      p.setChain = true;
+      setFollow(false);
+      updateChainChrome();
+      setStatus('Chain set — row 1 in slot ' + p.slotA + '. Press Play.');
+    }
+    function playlistOnPlay(fromStart) {
+      const p = state.playlist;
+      if (p.mode !== 'chain' || !p.setChain) return;
+      if (!fromStart && p.running) return;
+      if (!playlistRowsReady()) {
+        setStatus('Set every row to Pattern or Rest');
+        p.running = false;
+        return;
+      }
+      p.running = true;
+      p.rowIndex = 0;
+      p.preloaded = false;
+      setFollow(false);
+      if (p.clipName && state.clock.clips && state.clock.clips[p.clipName]) {
+        state.clock.clip = state.clock.clips[p.clipName];
+        state.clock.playClip = true;
+        fireClipAtTick(0);
+      }
+      preloadNextRow(0);
+      const now = document.getElementById('plNowRead');
+      if (now) now.textContent = 'row 1 · chain playing';
+    }
+    function sendDumpRow(i) {
+      const p = state.playlist;
+      const row = p.rows[i];
+      if (!row || row.type !== 'pattern' || !row.patternName) { setStatus('Row ' + (i + 1) + ' has no pattern'); return; }
+      dumpNameToSlot(row.patternName, row.slot);
+    }
+    function sendDumpAll() {
+      const p = state.playlist;
+      const seen = new Set();
+      for (let i = 0; i < p.rowCount; i++) {
+        const r = p.rows[i];
+        if (!r || r.type !== 'pattern' || !r.patternName) continue;
+        if (seen.has(+r.slot)) { setStatus('Duplicate slot ' + r.slot); return; }
+        seen.add(+r.slot);
+      }
+      let n = 0;
+      for (let i = 0; i < p.rowCount; i++) {
+        const r = p.rows[i];
+        if (r && r.type === 'pattern' && r.patternName) {
+          dumpNameToSlot(r.patternName, r.slot);
+          n++;
+        }
+      }
+      setStatus('Dumped ' + n + ' pattern' + (n === 1 ? '' : 's'));
+    }
+    function snapshotPlaylist() {
+      const p = state.playlist;
+      const lib = loadLibrary();
+      const patterns = {};
+      p.rows.forEach(r => {
+        if (r.patternName && lib[r.patternName]) patterns[r.patternName] = lib[r.patternName];
+      });
+      return {
+        rowCount: p.rowCount,
+        rows: JSON.parse(JSON.stringify(p.rows)),
+        slotA: p.slotA,
+        slotB: p.slotB,
+        playMode: p.playMode,
+        clipName: p.clipName,
+        patterns: patterns
+      };
+    }
+    function applyPlaylistSnap(snap) {
+      if (!snap) return;
+      const p = state.playlist;
+      p.rowCount = snap.rowCount || 4;
+      p.rows = snap.rows || [];
+      ensurePlRows();
+      p.slotA = snap.slotA || 12;
+      p.slotB = snap.slotB || 24;
+      p.playMode = snap.playMode || 'loop';
+      p.clipName = snap.clipName || '';
+      p.setChain = false;
+      if (snap.patterns) {
+        const lib = loadLibrary();
+        Object.keys(snap.patterns).forEach(name => {
+          if (!lib[name]) lib[name] = snap.patterns[name];
+          else if (JSON.stringify(lib[name]) !== JSON.stringify(snap.patterns[name])) {
+            lib[name + ' (from list)'] = snap.patterns[name];
+          }
+        });
+        writeLibrary(lib);
+        refreshLibrarySelect();
+      }
+      const rc = document.getElementById('plRowCount');
+      if (rc) rc.value = String(p.rowCount);
+      fillSlotSelect(document.getElementById('plSlotA'), p.slotA);
+      fillSlotSelect(document.getElementById('plSlotB'), p.slotB);
+      refreshPlClipSelect();
+      renderPlaylist();
+    }
+    function refreshPlListSelect() {
+      const sel = document.getElementById('plListSelect');
+      if (!sel) return;
+      const lib = loadListLibrary();
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— lists —</option>';
+      Object.keys(lib).sort().forEach(n => {
+        const o = document.createElement('option');
+        o.value = n;
+        o.textContent = n;
+        sel.appendChild(o);
+      });
+      if (cur && lib[cur]) sel.value = cur;
+    }
+    function refreshPlClipSelect() {
+      const sel = document.getElementById('plClipSelect');
+      if (!sel) return;
+      const clips = (state.clock && state.clock.clips) || {};
+      const cur = state.playlist.clipName;
+      sel.innerHTML = '<option value="">— none —</option>';
+      Object.keys(clips).sort().forEach(n => {
+        const o = document.createElement('option');
+        o.value = n;
+        o.textContent = n;
+        sel.appendChild(o);
+      });
+      if (cur && clips[cur]) sel.value = cur;
+    }
+    function initPlaylist() {
+      ensurePlRows();
+      const rc = document.getElementById('plRowCount');
+      if (rc && !rc.options.length) {
+        for (let i = 1; i <= 22; i++) {
+          const o = document.createElement('option');
+          o.value = i;
+          o.textContent = String(i);
+          rc.appendChild(o);
+        }
+        rc.value = String(state.playlist.rowCount);
+      }
+      fillSlotSelect(document.getElementById('plSlotA'), state.playlist.slotA);
+      fillSlotSelect(document.getElementById('plSlotB'), state.playlist.slotB);
+      refreshPlListSelect();
+      refreshPlClipSelect();
+      renderPlaylist();
+      document.getElementById('btnPlDump')?.addEventListener('click', () => {
+        state.playlist.mode = 'dump';
+        state.playlist.setChain = false;
+        state.playlist.running = false;
+        renderPlaylist();
+      });
+      document.getElementById('btnPlChain')?.addEventListener('click', () => {
+        state.playlist.mode = 'chain';
+        state.playlist.setChain = false;
+        renderPlaylist();
+      });
+      document.getElementById('plRowCount')?.addEventListener('change', (e) => {
+        state.playlist.rowCount = Math.max(1, Math.min(22, parseInt(e.target.value, 10) || 1));
+        state.playlist.setChain = false;
+        renderPlaylist();
+      });
+      document.getElementById('plSlotA')?.addEventListener('change', (e) => {
+        state.playlist.slotA = parseInt(e.target.value, 10);
+        state.playlist.setChain = false;
+        renderPlaylist();
+      });
+      document.getElementById('plSlotB')?.addEventListener('change', (e) => {
+        state.playlist.slotB = parseInt(e.target.value, 10);
+        renderPlaylist();
+      });
+      document.getElementById('btnSetChain')?.addEventListener('click', setChainNow);
+      document.getElementById('btnPlSendRow')?.addEventListener('click', () => sendDumpRow(0));
+      document.getElementById('btnPlSendAll')?.addEventListener('click', sendDumpAll);
+      document.getElementById('btnPlLoop')?.addEventListener('click', () => { state.playlist.playMode = 'loop'; updateChainChrome(); });
+      document.getElementById('btnPlOnce')?.addEventListener('click', () => { state.playlist.playMode = 'once'; updateChainChrome(); });
+      document.getElementById('btnPlHalt')?.addEventListener('click', () => { state.playlist.playMode = 'halt'; updateChainChrome(); });
+      document.getElementById('plClipSelect')?.addEventListener('change', (e) => {
+        state.playlist.clipName = e.target.value;
+      });
+      document.getElementById('btnPlSaveList')?.addEventListener('click', () => {
+        const name = window.prompt('Name this playlist');
+        if (!name) return;
+        const lib = loadListLibrary();
+        lib[name] = snapshotPlaylist();
+        writeListLibrary(lib);
+        refreshPlListSelect();
+        const sel = document.getElementById('plListSelect');
+        if (sel) sel.value = name;
+        setStatus('Saved list ' + name);
+      });
+      document.getElementById('btnPlLoadList')?.addEventListener('click', () => {
+        const sel = document.getElementById('plListSelect');
+        const name = sel && sel.value;
+        const lib = loadListLibrary();
+        if (!name || !lib[name]) { setStatus('Pick a list'); return; }
+        applyPlaylistSnap(lib[name]);
+        setStatus('Loaded list ' + name);
+      });
+      document.getElementById('btnPlDeleteList')?.addEventListener('click', () => {
+        const sel = document.getElementById('plListSelect');
+        const name = sel && sel.value;
+        if (!name) return;
+        const lib = loadListLibrary();
+        delete lib[name];
+        writeListLibrary(lib);
+        refreshPlListSelect();
+        setStatus('Deleted list ' + name);
+      });
+      document.getElementById('plRows')?.addEventListener('change', (e) => {
+        const el = e.target;
+        const i = parseInt(el.dataset.i, 10);
+        if (isNaN(i)) return;
+        const row = state.playlist.rows[i];
+        if (!row) return;
+        if (el.dataset.pl === 'type') row.type = el.value;
+        if (el.dataset.pl === 'pat') row.patternName = el.value;
+        if (el.dataset.pl === 'bars') {
+          row.bars = Math.max(1, Math.min(256, parseInt(el.value, 10) || 4));
+          el.blur();
+        }
+        if (el.dataset.pl === 'slot') {
+          const v = parseInt(el.value, 10);
+          if (usedDumpSlots(i).has(v)) { setStatus('Slot ' + v + ' already used'); renderPlaylist(); return; }
+          row.slot = v;
+        }
+        state.playlist.setChain = false;
+        renderPlaylist();
+      });
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          if (tab.dataset.tab === 'playlist') {
+            refreshPlClipSelect();
+            renderPlaylist();
+          }
+        });
+      });
+    }
+
     function boot() {
       const saved = restoreSession();
       if (saved && saved.pattern) {
@@ -4434,6 +5085,7 @@
       initShortcuts();
       initMapAndHelp();
       initClock();
+      initPlaylist();
       initMIDI().then(() => {
         if (saved && saved.portId) {
           const sel = document.getElementById('midiPort');
@@ -4450,7 +5102,7 @@
       });
       document.getElementById('btnRefreshMidi').addEventListener('click', refreshPorts);
 
-      setStatus('MIDI MuRF Editor v2.7 ready');
+      setStatus('MIDI MuRF Editor v3.0 — playlist ready');
     }
 
     boot();
