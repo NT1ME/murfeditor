@@ -1991,6 +1991,7 @@
       function writeRowLib(obj) {
         localStorage.setItem('murf-rows', JSON.stringify(obj));
       }
+      window._refreshRowSelect = refreshRowSelect;
       function refreshRowSelect() {
         const sel = document.getElementById('rowLibrary');
         if (!sel) return;
@@ -2377,11 +2378,11 @@
         const notes = NOTE_MAPS[state.perfMode] || NOTE_MAPS.triggered;
         notes.forEach((note, i) => {
           const key = document.createElement('div');
-          key.className = 'key' + (notes.length === 8 ? (' band' + i) : '');
+          key.className = 'key' + (notes.length === 8 ? (' band' + (7 - i)) : '');
           if (state.perfMode === 'step') key.textContent = 'STEP';
           else {
-            const letter = (PERF_KEY_ROWS[state.perfMode] || 'asdfghjk')[i] || '';
-            key.innerHTML = '<span class="knote">' + noteName(note) + '</span><span class="kcomp">' + letter.toUpperCase() + '</span><span class="kband">Band ' + (i + 1) + '</span>';
+            const letter = 'asdfghjk'[i] || '';
+            key.innerHTML = '<span class="knote">' + noteName(note) + '</span><span class="kcomp">' + letter.toUpperCase() + '</span><span class="kband">Band ' + (8 - i) + '</span>';
           }
           key.dataset.note = note;
           kb.appendChild(key);
@@ -2496,8 +2497,8 @@
         const rowKeys = { mute: '12345678', triggered: 'qwertyui', sustained: 'asdfghjk' }[mode];
         NOTE_MAPS[mode].forEach((note, i) => {
           const key = document.createElement('div');
-          key.className = 'key band' + i;
-          key.innerHTML = '<span class="knote">' + noteName(note) + '</span><span class="kcomp">' + (rowKeys[i] || '').toUpperCase() + '</span><span class="kband">Band ' + (i + 1) + '</span>';
+          key.className = 'key band' + (7 - i);
+          key.innerHTML = '<span class="knote">' + noteName(note) + '</span><span class="kcomp">' + (rowKeys[i] || '').toUpperCase() + '</span><span class="kband">Band ' + (8 - i) + '</span>';
           key.dataset.note = note;
           key.dataset.mode = mode;
           el.appendChild(key);
@@ -3412,6 +3413,8 @@
       state.clock.bpm = next;
       const box = document.getElementById('bpmBox');
       if (box) box.value = next;
+      const clipBpm = document.getElementById('clipBpmBox');
+      if (clipBpm && !state.clock.clip) clipBpm.value = next;
       if (state.clock.running) startTimer();
       recordEvent({ kind: 'bpm', val: next });
       updateClockReadout();
@@ -3517,8 +3520,12 @@
         else updateClipProgress();
       }
       if (c.recording) {
-        if (c.clipBars > 0 && c.tick >= c.clipBars * 96) punchOut();
-        else if (c.tick > 24 * 24 * 64) punchOut();
+        if (c.clipBars > 0 && c.tick >= c.clipBars * 96) {
+          punchOut();
+          haltPattern();
+          clockStop();
+          setStatus('Fixed take ended — Halt');
+        } else if (c.tick > 24 * 24 * 64) punchOut();
       }
     }
     function playClipEvent(ev) {
@@ -3699,6 +3706,12 @@
         barsBox.value = state.clock.clipBars;
         setStatus(state.clock.clipBars ? ('Rec length ' + state.clock.clipBars + ' bars') : 'Rec length free');
       });
+      barsBox?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          barsBox.blur();
+        }
+      });
       document.getElementById('btnTapTempo')?.addEventListener('click', () => {
         const now = performance.now();
         const c = state.clock;
@@ -3760,7 +3773,7 @@
           div: state.clock.div,
           clips: state.clock.clips,
           clipName: document.getElementById('clipSelect')?.value || '',
-          library: JSON.parse(localStorage.getItem('murf-library') || '{}'),
+          library: JSON.parse(localStorage.getItem('murf-pattern-library') || '{}'),
           rows: JSON.parse(localStorage.getItem('murf-rows') || '{}'),
           digits: loadDigitMap(),
           divBank: state.clock.bank || 0,
@@ -3789,7 +3802,7 @@
             const sel = document.getElementById('clipSelect'); if (sel) sel.value = p.clipName;
           }
         } catch (e) { errs.push('clips'); }
-        try { if (p.library) localStorage.setItem('murf-library', JSON.stringify(p.library)); } catch (e) { errs.push('library'); }
+        try { if (p.library) localStorage.setItem('murf-pattern-library', JSON.stringify(p.library)); } catch (e) { errs.push('library'); }
         try { if (p.rows) localStorage.setItem('murf-rows', JSON.stringify(p.rows)); } catch (e) { errs.push('rows'); }
         try { if (p.digits) { writeDigitMap(p.digits); applyKbdHints(); } } catch (e) { errs.push('digits'); }
         try {
@@ -3801,7 +3814,8 @@
         stopTimer();
         persistSession();
         buildGrid();
-        try { refreshLibrarySelect?.(); refreshRowSelect?.(); } catch (e) { errs.push('lists'); }
+        try { refreshLibrarySelect(); } catch (e) { errs.push('library-list'); }
+        try { if (typeof window._refreshRowSelect === 'function') window._refreshRowSelect(); } catch (e) { errs.push('rows-list'); }
         updateClockReadout();
         setStatus(errs.length ? ('Project loaded with errors: ' + errs.join(', ')) : 'Project loaded — Clock off, nothing sent');
       }
