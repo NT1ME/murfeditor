@@ -221,12 +221,27 @@
     #gridHint {
       display: none;
       font-size: 11px;
-      opacity: 0.78;
+      opacity: 0.82;
       margin: 8px 0 0;
       line-height: 1.45;
     }
     body.show-hints #gridHint { display: block; }
-    #gridHint .hint-row { margin: 0 0 2px; }
+    #gridHint .hint-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 2px 0;
+      margin: 0 0 6px;
+    }
+    #gridHint .hint-row span { white-space: nowrap; padding: 0 4px; }
+    #gridHint .hint-row i {
+      display: inline-block;
+      width: 1px;
+      height: 12px;
+      margin: 0 10px;
+      background: #6a6a68;
+      flex-shrink: 0;
+    }
     #gridHint .hint-seq { opacity: 0.9; }
     #clipProgressWrap {
       display: flex;
@@ -298,7 +313,24 @@
       height: 14vh; min-height: 58px; font-size: 15px;
       align-items: center; justify-content: center; text-align: center;
     }
-    #view-stack .stack-row .key small, #keyboard .key small { display: block; font-size: 12px; margin-top: 2px; opacity: 0.75; }
+    #keyboard .key, #view-stack .stack-row .key {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 2px;
+    }
+    .key .knote { font-size: 15px; line-height: 1.1; }
+    .key .kcomp {
+      font-size: 11px;
+      opacity: 0.8;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 3px;
+      padding: 0 5px;
+      line-height: 1.3;
+    }
+    .key .kband { font-size: 10px; opacity: 0.85; margin-top: 2px; }
 
     .tabs {
       display: flex;
@@ -926,9 +958,15 @@
           <div class="grid" id="patternGrid"></div>
         </div>
         <div id="gridHint">
-          <div class="hint-row">Band ↑↓    Step ←→    Range ⇧    Length ⌥    Slide ⌘    Ends [ ]    Jump ; '</div>
-          <div class="hint-row">Write O    Snap , .    Halt ⇧X    Step X    Pat Z    Clk C    Sync ⇧C</div>
-          <div class="hint-row hint-seq">Seq write N    Stamp Q W E R T Y H J (bands 1–8, toggle)    Space next step    Follow ⇧F</div>
+          <div class="hint-row">
+            <span>Band ↑↓</span><i></i><span>Step ←→</span><i></i><span>Range ⇧</span><i></i><span>Length ⌥</span><i></i><span>Slide ⌘</span><i></i><span>Ends [ ]</span><i></i><span>Jump ; '</span>
+          </div>
+          <div class="hint-row">
+            <span>Write O</span><i></i><span>Snap , .</span><i></i><span>Halt ⇧X</span><i></i><span>Step X</span><i></i><span>Pat Z</span><i></i><span>Clk C</span><i></i><span>Sync ⇧C</span><i></i><span>Follow ⇧F</span>
+          </div>
+          <div class="hint-row hint-seq">
+            <span>Seq write N</span><i></i><span>Stamp Q W E R T Y H J</span><i></i><span>Space next</span>
+          </div>
         </div>
 
         <div class="band-meta" id="bandMeta"></div>
@@ -1741,7 +1779,6 @@
       document.getElementById('btnPatternReset').addEventListener('click', () => {
         sendCC(90, 127);
         state.clock.seqStep = 0;
-        state.clock.halted = false;
         flashBtn('btnPatternReset');
         setStatus('Pattern Reset (CC90)');
         updatePlayheads();
@@ -1864,6 +1901,7 @@
         const grid = document.getElementById('patternGrid');
         if (grid) grid.style.setProperty('--cell', gridZoom + 'px');
       }
+      window._fitGrid = fitVisibleSteps;
       function fitVisibleSteps(n) {
         state.visibleSteps = n;
         buildGrid();
@@ -2339,11 +2377,11 @@
         const notes = NOTE_MAPS[state.perfMode] || NOTE_MAPS.triggered;
         notes.forEach((note, i) => {
           const key = document.createElement('div');
-          key.className = 'key' + (notes.length === 8 ? (' band' + (7 - i)) : '');
+          key.className = 'key' + (notes.length === 8 ? (' band' + i) : '');
           if (state.perfMode === 'step') key.textContent = 'STEP';
           else {
-            const letter = 'ASDFGHJK'[i] || '';
-            key.innerHTML = noteName(note) + '<small>' + letter + '</small>';
+            const letter = (PERF_KEY_ROWS[state.perfMode] || 'asdfghjk')[i] || '';
+            key.innerHTML = '<span class="knote">' + noteName(note) + '</span><span class="kcomp">' + letter.toUpperCase() + '</span><span class="kband">Band ' + (i + 1) + '</span>';
           }
           key.dataset.note = note;
           kb.appendChild(key);
@@ -2458,8 +2496,8 @@
         const rowKeys = { mute: '12345678', triggered: 'qwertyui', sustained: 'asdfghjk' }[mode];
         NOTE_MAPS[mode].forEach((note, i) => {
           const key = document.createElement('div');
-          key.className = 'key band' + (7 - i);
-          key.innerHTML = noteName(note) + '<small>' + (rowKeys[i] || '').toUpperCase() + '</small>';
+          key.className = 'key band' + i;
+          key.innerHTML = '<span class="knote">' + noteName(note) + '</span><span class="kcomp">' + (rowKeys[i] || '').toUpperCase() + '</span><span class="kband">Band ' + (i + 1) + '</span>';
           key.dataset.note = note;
           key.dataset.mode = mode;
           el.appendChild(key);
@@ -2704,7 +2742,6 @@
       document.getElementById('btnGlobalPatternReset').addEventListener('click', () => {
         sendCC(90, 127);
         state.clock.seqStep = 0;
-        state.clock.halted = false;
         setStatus('Pattern Reset (CC90)');
         updatePlayheads();
       });
@@ -2712,8 +2749,10 @@
         sendNoteOn(65, 100);
         setTimeout(() => sendNoteOff(65), 50);
         state.clock.seqStep = 0;
-        state.clock.halted = false;
-        setStatus('Clock Reset (Note 65)');
+        if (typeof releaseNote === 'function') {
+          [...(typeof perfLatched !== 'undefined' ? perfLatched : [])].forEach(n => releaseNote(n));
+        }
+        setStatus('Clock Reset (Note 65) — latch cleared');
         updatePlayheads();
       });
     }
@@ -2965,6 +3004,9 @@
       document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
       restoreTogglesFromCcs();
       if (typeof applyKbdHints === 'function') applyKbdHints();
+      if (name === 'pattern' && typeof window._fitGrid === 'function') {
+        setTimeout(() => window._fitGrid(state.visibleSteps || 64), 40);
+      }
     }
 
     function cycleAppTab(dir) {
@@ -3381,9 +3423,8 @@
         sendCC(9, d.cc);
         recordEvent({ kind: 'cc', cc: 9, val: d.cc });
       }
-      armClockOn();
-      if (!state.clock.running) clockPlay(true);
       updateClockReadout();
+      if (state.follow) updatePlayheads();
     }
     function currentBankSlots() {
       const b = state.clock.bank || 0;
@@ -3535,6 +3576,7 @@
       armClockOn();
       c.running = true;
       if (fromStart) { c.tick = 0; c.seqStep = 0; c.halted = false; }
+      else c.halted = false;
       if (c.recArm && !c.recording && !c.playClip) {
         c.recording = true;
         c.take = [];
@@ -3726,34 +3768,42 @@
         };
       }
       function applyProject(p) {
-        if (!p) return;
-        if (p.pattern) {
-          state.pattern.slot = p.pattern.slot || 12;
-          state.pattern.lfo = p.pattern.lfo || 0;
-          if (p.pattern.bands) state.pattern.bands = p.pattern.bands.map(b => ({ length: b.length || 1, steps: new Set(b.steps || []) }));
-        }
-        if (p.panel) { applyPanel(p.panel); applyPanelMidi(p.panel); }
-        if (p.bpm) { state.clock.bpm = p.bpm; const b = document.getElementById('bpmBox'); if (b) b.value = p.bpm; }
-        if (p.div != null) { state.clock.div = p.div; const s = document.getElementById('divSelect'); if (s) s.value = String(p.div); }
-        if (p.clips) { state.clock.clips = p.clips; writeClockClips(); refreshClipSelect(); }
-        if (p.clipName && state.clock.clips[p.clipName]) {
-          state.clock.clip = state.clock.clips[p.clipName];
-          const sel = document.getElementById('clipSelect'); if (sel) sel.value = p.clipName;
-        }
-        if (p.library) localStorage.setItem('murf-library', JSON.stringify(p.library));
-        if (p.rows) localStorage.setItem('murf-rows', JSON.stringify(p.rows));
-        if (p.digits) { writeDigitMap(p.digits); applyKbdHints(); }
-        if (p.customDivs && p.customDivs.length === 10) state.clock.customDivs = p.customDivs.slice();
-        if (p.divBank != null) state.clock.bank = p.divBank;
-        updateBankLabel();
+        if (!p || typeof p !== 'object') throw new Error('not an object');
+        const errs = [];
+        try {
+          if (p.pattern && p.pattern.bands) {
+            state.pattern.slot = p.pattern.slot || 12;
+            state.pattern.lfo = p.pattern.lfo || 0;
+            state.pattern.bands = p.pattern.bands.map(b => ({ length: b.length || 1, steps: new Set(b.steps || []) }));
+          }
+        } catch (e) { errs.push('pattern'); }
+        try { if (p.panel) { applyPanel(p.panel); applyPanelMidi(p.panel); } } catch (e) { errs.push('panel'); }
+        try {
+          if (p.bpm) { state.clock.bpm = p.bpm; const b = document.getElementById('bpmBox'); if (b) b.value = p.bpm; }
+          if (p.div != null) { state.clock.div = p.div; const s = document.getElementById('divSelect'); if (s) s.value = String(p.div); }
+        } catch (e) { errs.push('clock'); }
+        try {
+          if (p.clips) { state.clock.clips = p.clips; writeClockClips(); refreshClipSelect(); }
+          if (p.clipName && state.clock.clips[p.clipName]) {
+            state.clock.clip = state.clock.clips[p.clipName];
+            const sel = document.getElementById('clipSelect'); if (sel) sel.value = p.clipName;
+          }
+        } catch (e) { errs.push('clips'); }
+        try { if (p.library) localStorage.setItem('murf-library', JSON.stringify(p.library)); } catch (e) { errs.push('library'); }
+        try { if (p.rows) localStorage.setItem('murf-rows', JSON.stringify(p.rows)); } catch (e) { errs.push('rows'); }
+        try { if (p.digits) { writeDigitMap(p.digits); applyKbdHints(); } } catch (e) { errs.push('digits'); }
+        try {
+          if (p.customDivs && p.customDivs.length === 10) state.clock.customDivs = p.customDivs.slice();
+          if (p.divBank != null) state.clock.bank = p.divBank;
+          updateBankLabel();
+        } catch (e) { errs.push('divs'); }
         state.clock.running = false; state.clock.recording = false; state.clock.recArm = false; state.clock.armed = false;
         stopTimer();
         persistSession();
         buildGrid();
-        refreshLibrarySelect?.();
-        refreshRowSelect?.();
+        try { refreshLibrarySelect?.(); refreshRowSelect?.(); } catch (e) { errs.push('lists'); }
         updateClockReadout();
-        setStatus('Project loaded — Clock off, nothing sent');
+        setStatus(errs.length ? ('Project loaded with errors: ' + errs.join(', ')) : 'Project loaded — Clock off, nothing sent');
       }
       document.getElementById('btnSaveProject')?.addEventListener('click', () => {
         const blob = new Blob([JSON.stringify(collectProject(), null, 2)], { type: 'application/json' });
@@ -3769,7 +3819,14 @@
         ev.target.value = '';
         if (!f) return;
         const r = new FileReader();
-        r.onload = () => { try { applyProject(JSON.parse(r.result)); } catch (e) { setStatus('Bad project file'); } };
+        r.onload = () => {
+          try {
+            const p = JSON.parse(r.result);
+            applyProject(p);
+          } catch (e) {
+            setStatus('Bad project file (not JSON from Save project)');
+          }
+        };
         r.readAsText(f);
       });
 
@@ -4138,10 +4195,10 @@
           sendCurrentPattern();
         }
         else if (k === 'a' && activeTab() !== 'keyboard' && activeTab() !== 'stack') document.getElementById('btnAutoSend')?.click();
-        else if (k === 'i') document.getElementById('btnInvert')?.click();
+        else if (k === 'i' && activeTab() === 'pattern') document.getElementById('btnInvert')?.click();
         else if (k === 'f') {
           if (e.shiftKey) { e.preventDefault(); setFollow(!state.follow); }
-          else document.getElementById('btnFlip')?.click();
+          else if (activeTab() === 'pattern') document.getElementById('btnFlip')?.click();
         }
         else if (k === 't') {
           if (activeTab() === 'clock') document.getElementById('btnTapTempo')?.click();
