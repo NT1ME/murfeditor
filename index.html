@@ -91,10 +91,12 @@
       grid-column: 2;
       grid-row: 1;
       display: flex;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       gap: 8px 12px;
-      align-items: center;
+      align-items: flex-start;
+      min-width: 0;
     }
+    #clockCluster { min-width: 0; flex: 1; }
     .hdr-trans {
       grid-column: 2;
       grid-row: 2;
@@ -3419,7 +3421,7 @@
       const el = document.getElementById('clockReadout');
       if (el) el.textContent = steps + ' steps × ' + d.name + ' = ' + (Number.isInteger(bars) ? bars : bars.toFixed(2)) + ' bars @ ' + c.bpm;
       const arm = document.getElementById('btnClockArm');
-      if (arm) { arm.classList.toggle('on', c.armed); arm.textContent = c.armed ? 'Clock: On' : 'Clock'; }
+      if (arm) { arm.classList.toggle('on', c.armed); arm.textContent = 'Clock'; }
       const rec = document.getElementById('btnRecord');
       if (rec) { rec.classList.toggle('on', c.recArm || c.recording); rec.textContent = c.recording ? 'REC' : (c.recArm ? 'Arm' : 'Rec'); }
       const pc = document.getElementById('btnPlayClip');
@@ -3939,7 +3941,7 @@
           clockStopDevice();
           return;
         }
-        if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'z' || e.key === 'Z') && !isTextEntry(e.target)) {
+        if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyZ' && !isTextEntry(e.target)) {
           e.preventDefault();
           resetAll();
           return;
