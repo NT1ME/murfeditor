@@ -1206,9 +1206,8 @@
             <div class="tgroup chain" style="flex:1">
               <span class="tlabel">Chain</span>
               <button type="button" id="btnPlChain">Chain</button>
-              <label>Slot A <select id="plSlotA"></select></label>
-              <label>Slot B <select id="plSlotB"></select></label>
               <button type="button" id="btnSetChain">Set chain</button>
+              <span class="hint">Row 1→slot 2 … skip 1 and 13. Dumps before Play. PC only while running. PC+Start after a rest.</span>
             </div>
           </div>
           <div class="pl-grid-head"><span>#</span><span>Patterns</span><span>Clips</span></div>
@@ -1327,7 +1326,8 @@
         clipTick: 0,
         clipPlayMode: 'loop',
         ping: 'A',
-        preloaded: false
+        preloaded: false,
+        seqHalted: false
       }
     };
 
@@ -4868,6 +4868,9 @@
       });
       if (value && lib[value]) sel.value = value;
     }
+    function chainSlotForRow(i) {
+      return LEGAL_SLOTS[i] || LEGAL_SLOTS[LEGAL_SLOTS.length - 1];
+    }
     function usedDumpSlots(except) {
       const p = state.playlist;
       const used = new Set();
@@ -4963,7 +4966,7 @@
         const info = rowCycleInfo(row);
         const cf = clipFlag(crow);
         const slotDisabled = p.mode === 'chain';
-        const slotVal = p.mode === 'chain' ? ((i % 2 === 0) ? p.slotA : p.slotB) : row.slot;
+        const slotVal = p.mode === 'chain' ? chainSlotForRow(i) : row.slot;
         div.innerHTML =
           '<span class="pl-idx">' + (i + 1) + '</span>' +
           '<div class="pl-pat">' +
@@ -5010,10 +5013,6 @@
       document.getElementById('btnClLoop')?.classList.toggle('on', (p.clipPlayMode || 'loop') === 'loop');
       document.getElementById('btnClOnce')?.classList.toggle('on', p.clipPlayMode === 'once');
       document.getElementById('btnClHalt')?.classList.toggle('on', p.clipPlayMode === 'halt');
-      const a = document.getElementById('plSlotA');
-      const b = document.getElementById('plSlotB');
-      if (a) a.disabled = p.mode !== 'chain';
-      if (b) b.disabled = p.mode !== 'chain';
       document.getElementById('btnSetChain').disabled = p.mode !== 'chain';
       document.getElementById('btnPlSendAll').disabled = p.mode !== 'dump';
       document.getElementById('btnPlSendRow').disabled = p.mode !== 'dump';
@@ -5135,29 +5134,24 @@
       if (!row) return;
       if (row.type === 'rest' || !row.patternName) {
         haltPattern();
+        p.seqHalted = true;
         setStatus('Rest row ' + (idx + 1));
         return;
       }
-      const slot = (idx % 2 === 0) ? p.slotA : p.slotB;
+      const slot = chainSlotForRow(idx);
       pcToSlot(slot);
-      sendRT(0xFA);
-      state.clock.halted = false;
-      state.clock.seqStep = 0;
-      setStatus('Chain → slot ' + slot + ' · ' + row.patternName);
+      if (p.seqHalted) {
+        sendRT(0xFA);
+        p.seqHalted = false;
+        state.clock.halted = false;
+        state.clock.seqStep = 0;
+        setStatus('Chain after rest → slot ' + slot + ' · ' + row.patternName);
+      } else {
+        setStatus('Chain → slot ' + slot + ' · ' + row.patternName);
+      }
     }
     function preloadNextRow(idx) {
-      const p = state.playlist;
-      if (p.mode !== 'chain') return;
-      let next = idx + 1;
-      if (next >= p.rowCount) {
-        if (p.playMode !== 'loop') return;
-        next = 0;
-      }
-      const row = p.rows[next];
-      if (!row || row.type === 'rest' || !row.patternName) return;
-      const slot = (next % 2 === 0) ? p.slotA : p.slotB;
-      dumpNameToSlot(row.patternName, slot);
-      setStatus('Preload ' + row.patternName + ' → slot ' + slot);
+      return;
     }
     function finishPlaylist() {
       const p = state.playlist;
@@ -5193,16 +5187,25 @@
     function setChainNow() {
       const p = state.playlist;
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
-      if (!p.slotA) { setStatus('Pick slot A'); return; }
-      const r0 = p.rows[0];
-      if (!r0 || r0.type !== 'pattern' || !r0.patternName) { setStatus('Row 1 needs a pattern'); return; }
+      if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row in the count must be Pattern or Rest'); return; }
-      dumpNameToSlot(r0.patternName, p.slotA);
-      pcToSlot(p.slotA);
+      let dumped = 0;
+      let firstSlot = null;
+      for (let i = 0; i < p.rowCount; i++) {
+        const row = p.rows[i];
+        if (!row || row.type === 'rest' || !row.patternName) continue;
+        const slot = chainSlotForRow(i);
+        if (!dumpNameToSlot(row.patternName, slot)) return;
+        dumped++;
+        if (firstSlot == null) firstSlot = slot;
+      }
+      if (firstSlot == null) { setStatus('Need at least one pattern row'); return; }
+      pcToSlot(firstSlot);
       p.setChain = true;
+      p.seqHalted = false;
       setFollow(false);
       updateChainChrome();
-      setStatus('Chain set — row 1 in slot ' + p.slotA + '. Press Play.');
+      setStatus('Chain set — ' + dumped + ' patterns dumped. Row 1 selected. Press Play.');
     }
     function playlistOnPlay(fromStart) {
       const p = state.playlist;
@@ -5222,8 +5225,8 @@
       }
       if (wantChain) {
         p.running = true;
+        p.seqHalted = false;
         setFollow(false);
-        preloadNextRow(0);
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
@@ -5382,8 +5385,6 @@
         }
         rc.value = String(state.playlist.rowCount);
       }
-      fillSlotSelect(document.getElementById('plSlotA'), state.playlist.slotA);
-      fillSlotSelect(document.getElementById('plSlotB'), state.playlist.slotB);
       refreshPlListSelect();
       fillPlClipCount();
       renderPlaylist();
@@ -5401,15 +5402,6 @@
       document.getElementById('plRowCount')?.addEventListener('change', (e) => {
         state.playlist.rowCount = Math.max(0, Math.min(22, parseInt(e.target.value, 10) || 0));
         state.playlist.setChain = false;
-        renderPlaylist();
-      });
-      document.getElementById('plSlotA')?.addEventListener('change', (e) => {
-        state.playlist.slotA = parseInt(e.target.value, 10);
-        state.playlist.setChain = false;
-        renderPlaylist();
-      });
-      document.getElementById('plSlotB')?.addEventListener('change', (e) => {
-        state.playlist.slotB = parseInt(e.target.value, 10);
         renderPlaylist();
       });
       document.getElementById('btnSetChain')?.addEventListener('click', setChainNow);
