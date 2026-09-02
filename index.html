@@ -5056,12 +5056,12 @@
         if (now) now.textContent = 'pattern row ' + (hit.i + 1) + ' · bar ' + barInRow + ' of ' + rowBars + ' · list bar ' + barInList + ' of ' + chainTotalBars();
         if (read) read.textContent = barInList + ' / ' + chainTotalBars() + ' bars';
         if (barEl) barEl.style.width = (pTotal ? Math.min(100, (p.patternTick / pTotal) * 100) : 0) + '%';
+        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
         if (hit.i !== p.rowIndex) {
           p.rowIndex = hit.i;
           p.preloaded = false;
           enterPlaylistRow(hit.i);
           preloadNextRow(hit.i);
-          document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
         }
         if (!p.preloaded && rowTick >= Math.max(0, (rowBars - 1) * 96)) {
           preloadNextRow(hit.i);
@@ -5081,9 +5081,9 @@
         if (now) now.textContent = 'clip row ' + (hit.i + 1) + ' · bar ' + barInRow + ' of ' + rowBars + ' · list bar ' + barInList + ' of ' + clipListTotalBars();
         if (read) read.textContent = barInList + ' / ' + clipListTotalBars() + ' bars';
         if (barEl) barEl.style.width = (cTotal ? Math.min(100, (p.clipTick / cTotal) * 100) : 0) + '%';
+        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === hit.i));
         if (hit.i !== p.clipIndex) {
           p.clipIndex = hit.i;
-          document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === hit.i));
         }
         if (p.clipTick >= cTotal) finishClipList();
       }
@@ -5095,7 +5095,7 @@
         p.rowIndex = 0;
         p.preloaded = false;
         enterPlaylistRow(0);
-        preloadNextRow(0);
+        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === 0));
         return;
       }
       p.running = false;
@@ -5115,6 +5115,7 @@
       if (mode === 'loop') {
         p.clipTick = 0;
         p.clipIndex = 0;
+        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === 0));
         return;
       }
       p.clipRunning = false;
