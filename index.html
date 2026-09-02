@@ -3860,10 +3860,7 @@
       }
       const led = document.getElementById('beatLed');
       if (led) led.classList.toggle('on', c.running && (c.tick % 24) < 2);
-      if (typeof playlistOnTick === 'function') playlistOnTick();
-      const skipF8 = !!(state.playlist && state.playlist.skipF8);
-      if (state.playlist) state.playlist.skipF8 = false;
-      if (c.armed && state.output && !skipF8) {
+      if (c.armed && state.output) {
         try { state.output.send([0xF8]); } catch (e) {}
       }
       if (c.playClip && c.clip) {
@@ -3881,6 +3878,7 @@
           setStatus('Fixed take ended — Halt');
         } else if (c.tick > 24 * 24 * 64) punchOut();
       }
+      if (typeof playlistOnTick === 'function') playlistOnTick();
     }
     function lightPerfNote(note, on) {
       document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => {
@@ -5285,7 +5283,6 @@
       const slot = rowDestSlot(idx);
       if (slot == null) { setStatus('Row ' + (idx + 1) + ' needs a type'); return; }
       pcToSlot(slot);
-      p.skipF8 = true;
       if (p.clipArmed === false) p.needStartAfterTs = false;
       const needStart = row.type === 'pattern' && p.needStartAfterTs && p.running && p.clipArmed !== false;
       if (needStart) {
