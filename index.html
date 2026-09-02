@@ -860,7 +860,7 @@
         <div id="clockCluster" class="tgroup">
           <div id="clockRow1">
             <span class="tlabel">Clock</span>
-            <button id="btnClockArm" title="MIDI clock listen (CC89) / Shift+C">Clock</button>
+            <button id="btnClockArm" title="MIDI clock listen (CC89) / Shift+C" data-kbd="⇧C">Clock</button>
             <button id="btnPlay" title="Shift+Enter">Play</button>
             <button id="btnClockStop" title="Shift+Space">Stop Clock</button>
             <button id="btnContinue" title="⌘+Enter">Cont</button>
@@ -943,7 +943,7 @@
             </div>
             <div class="toggle-row">
               <span>Pattern Clock Sync</span>
-              <button class="toggle on" id="togClockSync" data-cc="89" title="CC89" data-kbd="K"></button>
+              <button class="toggle on" id="togClockSync" data-cc="89" title="CC89 / Shift+C" data-kbd="⇧C"></button>
             </div>
           </div>
 
@@ -1193,6 +1193,7 @@
             <button type="button" id="btnPlExportList">Export list</button>
             <button type="button" id="btnPlImportList">Import list</button>
             <input type="file" id="plListFile" accept=".json,application/json" hidden>
+            <button type="button" id="btnPlRefreshLib">Refresh patterns</button>
           </div>
           <div class="row" style="gap:10px;align-items:stretch;margin-bottom:10px">
             <div class="tgroup dump" style="flex:1">
@@ -3266,6 +3267,7 @@
             saveLibraryDump(name, syx, state.pattern.slot);
             refreshLibrarySelect();
             document.getElementById('patternLibrary').value = name;
+            if (typeof refreshPlaylistMenus === 'function') refreshPlaylistMenus();
             setStatus('Saved to library: ' + name);
           } catch (err) {
             setStatus('Save failed: ' + err.message);
@@ -3323,6 +3325,7 @@
       if (name === 'pattern' && typeof window._fitGrid === 'function') {
         setTimeout(() => window._fitGrid(state.visibleSteps || 64), 40);
       }
+      if (name === 'playlist' && typeof refreshPlaylistMenus === 'function') refreshPlaylistMenus();
       if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
 
@@ -3574,7 +3577,9 @@
         btnSelectAllBands: '⌘A',
         btnPlay: '⇧↵', btnContinue: '⌘↵', btnClockStop: '⇧Space', btnPauseAll: '⌥Space', btnResetAll: '⌥Z', btnPlayClip: '⌘⇧↵', btnRecord: '\\', btnGlobalPatternReset: 'Z', btnHaltPattern: '⇧X', btnStopPattern: 'X', btnGlobalClockReset: 'C', btnFollow: '⇧F', btnNoteReset: 'C', btnStackReset: 'C', btnNotePriority: 'N', btnStackPriority: 'N', btnLatch: 'V', btnStackLatch: 'V', btnKeyStep: 'X', btnStackStep: 'X', btnTapTempo: 'T', btnSaveClip: '⌘S', btnLoadClip: '⌘O', btnDeleteClip: '⌘X', btnSaveProject: '⌘⇧S', btnOpenProject: '⌘⇧O', 
         btnZoomOut: '−', btnZoomIn: '+',
-        togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: '⇧S'
+        togBypass: 'B', togLfo: 'L', togFreq: 'M', togStaccato: '⇧S', togClockSync: '⇧C',
+        btnClockArm: '⇧C',
+        btnPlSaveList: '⌘S', btnPlLoadList: '⌘O', btnPlDeleteList: '⌘X'
       };
       const map = loadDigitMap();
       const inv = {};
@@ -4429,6 +4434,7 @@
           if (e.shiftKey) { document.getElementById('btnOpenProject')?.click(); return; }
           if (activeTab() === 'clock') document.getElementById('btnLoadClip')?.click();
           else if (activeTab() === 'playlist') document.getElementById('btnPlLoadList')?.click();
+          else document.getElementById('btnLoadLibrary')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.key === '.')) {
@@ -4453,18 +4459,18 @@
           } else document.getElementById('btnLoadLibrary')?.click();
           return;
         }
-        if ((e.metaKey || e.ctrlKey) && k === 'i') {
+        if ((e.metaKey || e.ctrlKey) && (k === 'i' || e.code === 'KeyI')) {
           e.preventDefault();
-          if (e.shiftKey) invertSelection();
+          if (e.shiftKey) document.getElementById('btnInvertSel')?.click();
           else {
             document.getElementById('btnInitPattern')?.click();
             flashBtn('btnInitPattern');
           }
           return;
         }
-        if ((e.metaKey || e.ctrlKey) && k === 'f') {
+        if ((e.metaKey || e.ctrlKey) && (k === 'f' || e.code === 'KeyF')) {
           e.preventDefault();
-          if (e.shiftKey) flipSelection();
+          if (e.shiftKey) document.getElementById('btnFlipSel')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 'a') {
@@ -4844,6 +4850,10 @@
         sel.appendChild(o);
       });
       sel.value = LEGAL_SLOTS.includes(+cur) ? cur : '12';
+    }
+    function refreshPlaylistMenus() {
+      if (typeof renderPlaylist === 'function') renderPlaylist();
+      if (typeof refreshPlListSelect === 'function') refreshPlListSelect();
     }
     function fillPatternSelect(sel, value) {
       if (!sel) return;
@@ -5425,6 +5435,10 @@
             el.blur();
           }
         }
+      });
+      document.getElementById('btnPlRefreshLib')?.addEventListener('click', () => {
+        refreshPlaylistMenus();
+        setStatus('Pattern and clip menus refreshed');
       });
       document.getElementById('btnPlExportList')?.addEventListener('click', exportPlaylistFile);
       document.getElementById('btnPlImportList')?.addEventListener('click', () => document.getElementById('plListFile')?.click());
