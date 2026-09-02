@@ -254,52 +254,35 @@
       flex-shrink: 0;
     }
     #gridHint .hint-seq { opacity: 0.9; }
-    #clipProgressWrap {
+    .hdr-meter {
       display: flex;
       align-items: center;
       gap: 8px;
-      min-width: 160px;
-      flex: 1;
+      flex: 1 1 0;
+      min-width: 0;
     }
-    #clipProgress {
+    .hdr-meter-bar {
       flex: 1;
       height: 8px;
       background: #2a2a30;
       border-radius: 4px;
       overflow: hidden;
-      min-width: 80px;
+      min-width: 0;
     }
-    #clipProgress > span {
-      display: block;
-      height: 100%;
-      width: 0;
-      background: #c4b48a;
-    }
-    #clipProgressRead, #chainProgressRead { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
-    #chainProgressWrap {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      min-width: 160px;
-      flex: 1;
-    }
-    #chainProgress {
-      flex: 1;
-      height: 8px;
-      background: #2a2a30;
-      border-radius: 4px;
-      overflow: hidden;
-      min-width: 80px;
-    }
-    #chainProgress > span {
-      display: block;
-      height: 100%;
-      width: 0;
-      background: #7dffb0;
+    .hdr-meter-bar > span { display: block; height: 100%; width: 0; }
+    #clipProgressBar { background: #c4b48a; }
+    #chainProgressBar { background: #60a5fa; }
+    #clipListProgressBar { background: #7dffb0; }
+    .hdr-meter-read { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+    .pl-cols {
+      display: grid;
+      grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 10px;
+      align-items: start;
     }
     .pl-row {
       display: grid;
-      grid-template-columns: 28px minmax(0, 1.15fr) minmax(0, 1fr);
+      grid-template-columns: 28px minmax(0, 1fr);
       gap: 8px;
       align-items: stretch;
       padding: 4px 0;
@@ -330,22 +313,17 @@
     .pl-flag { font-size: 10px; color: var(--text-dim); grid-column: 1 / -1; }
     .pl-flag.cut { color: #fb923c; }
     .pl-flag.clean { color: #4ade80; }
-    .pl-grid-head {
-      display: grid;
-      grid-template-columns: 28px minmax(0, 1.15fr) minmax(0, 1fr);
-      gap: 8px;
+    .pl-col-head {
       font-size: 11px;
       color: var(--text-dim);
-      margin: 6px 0 4px;
+      margin: 0 0 4px 28px;
     }
     .tgroup.dump { border-color: rgba(196, 180, 138, 0.45); }
     .tgroup.chain { border-color: rgba(96, 165, 250, 0.45); }
     .tgroup.pllib { border-color: rgba(244, 244, 240, 0.25); }
     .tgroup.plplay { border-color: rgba(196, 180, 138, 0.4); }
     .tgroup.clplay { border-color: rgba(125, 255, 176, 0.35); }
-    #chainProgress > span { background: #c4b48a; }
-    #clipListProgress { flex: 1; height: 8px; background: #2a2a30; border-radius: 4px; overflow: hidden; min-width: 80px; }
-    #clipListProgress > span { display: block; height: 100%; width: 0; background: #7dffb0; }
+    #clipListProgressBar { background: #7dffb0; }
     #clockCluster { flex-direction: column; align-items: stretch; }
     #clockRow1, #clockRow2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     button.map-pick { outline: 2px solid #6ea8ff; }
@@ -873,20 +851,18 @@
             <div id="beatLed" title="Quarter pulse"></div>
           </div>
           <div id="clockRow2">
-            <button id="btnClipLoop" class="on">Loop</button>
-            <button id="btnClipOnce">Once</button>
-            <button id="btnClipHalt">Once + Halt</button>
-            <div id="clipProgressWrap">
-              <div id="clipProgress"><span id="clipProgressBar"></span></div>
-              <span id="clipProgressRead">clip —</span>
+            <button id="btnResetLists" title="Rewind both lists + stop clock / ⌥X" data-kbd="⌥X">Reset lists</button>
+            <div class="hdr-meter" id="clipProgressWrap">
+              <div class="hdr-meter-bar" id="clipProgress"><span id="clipProgressBar"></span></div>
+              <span class="hdr-meter-read" id="clipProgressRead">clip —</span>
             </div>
-            <div id="chainProgressWrap">
-              <div id="chainProgress"><span id="chainProgressBar"></span></div>
-              <span id="chainProgressRead">patterns —</span>
+            <div class="hdr-meter" id="chainProgressWrap">
+              <div class="hdr-meter-bar" id="chainProgress"><span id="chainProgressBar"></span></div>
+              <span class="hdr-meter-read" id="chainProgressRead">patterns —</span>
             </div>
-            <div id="chainProgressWrap">
-              <div id="clipListProgress"><span id="clipListProgressBar"></span></div>
-              <span id="clipListProgressRead">clips —</span>
+            <div class="hdr-meter" id="clipListProgressWrap">
+              <div class="hdr-meter-bar" id="clipListProgress"><span id="clipListProgressBar"></span></div>
+              <span class="hdr-meter-read" id="clipListProgressRead">clips —</span>
             </div>
           </div>
         </div>
@@ -1179,6 +1155,12 @@
             <label>Clip BPM <input id="clipBpmBox" type="number" min="20" max="300" value="120" style="width:56px"></label>
             <label>Length (bars) <input id="clipBarsBox" type="number" min="0" max="64" value="0" style="width:48px" title="0 = free length. Rec punches out after this many bars."></label>
           </div>
+          <div class="row" style="gap:8px;align-items:center;margin-top:8px">
+            <button type="button" id="btnClipLoop" class="on">Loop</button>
+            <button type="button" id="btnClipOnce">Once</button>
+            <button type="button" id="btnClipHalt">Once + Halt</button>
+            <span class="hint">Recorded clip playback. Play clip stays in the header.</span>
+          </div>
         </div>
       </div>
 
@@ -1199,7 +1181,6 @@
             <div class="tgroup dump" style="flex:1">
               <span class="tlabel">Dump</span>
               <button type="button" id="btnPlDump" class="on">Dump</button>
-              <label>Rows <select id="plRowCount"></select></label>
               <button type="button" id="btnPlSendRow">Send this row</button>
               <button type="button" id="btnPlSendAll">Send all rows</button>
             </div>
@@ -1207,25 +1188,34 @@
               <span class="tlabel">Chain</span>
               <button type="button" id="btnPlChain">Chain</button>
               <button type="button" id="btnSetChain">Set chain</button>
-              <span class="hint">Row 1→slot 2 … skip 1 and 13. Dumps before Play. PC only while running. PC+Start after a rest.</span>
+              <button type="button" id="btnResetListsPl" title="Rewind both lists + stop clock / ⌥X" data-kbd="⌥X">Reset lists</button>
+              <span class="hint">Row 1→slot 2 … skip 1 and 13. Pattern / Rest / EQ Bass / EQ Mids. Empty clip rows eat time.</span>
             </div>
           </div>
-          <div class="pl-grid-head"><span>#</span><span>Patterns</span><span>Clips</span></div>
-          <div id="plRows"></div>
-          <div class="row" style="gap:10px;margin-top:12px">
-            <div class="tgroup plplay" style="flex:1">
-              <span class="tlabel">Pattern list</span>
-              <button type="button" id="btnPlLoop" class="on">Loop</button>
-              <button type="button" id="btnPlOnce">Once</button>
-              <button type="button" id="btnPlHalt">Once + Halt</button>
-              <div id="plNowRead" class="pl-flag">patterns idle</div>
+          <div class="pl-cols">
+            <div>
+              <div class="tgroup plplay" style="margin-bottom:8px">
+                <span class="tlabel">Pattern list</span>
+                <label>Rows <select id="plRowCount"></select></label>
+                <button type="button" id="btnPlLoop" class="on">Loop</button>
+                <button type="button" id="btnPlOnce">Once</button>
+                <button type="button" id="btnPlHalt">Once + Halt</button>
+                <div id="plNowRead" class="pl-flag">patterns idle</div>
+              </div>
+              <div class="pl-col-head">Patterns</div>
+              <div id="plPatRows"></div>
             </div>
-            <div class="tgroup clplay" style="flex:1">
-              <span class="tlabel">Clip list</span>
-              <button type="button" id="btnClLoop" class="on">Loop</button>
-              <button type="button" id="btnClOnce">Once</button>
-              <button type="button" id="btnClHalt">Once + Halt</button>
-              <div id="clNowRead" class="pl-flag">clips idle</div>
+            <div>
+              <div class="tgroup clplay" style="margin-bottom:8px">
+                <span class="tlabel">Clip list</span>
+                <label>Rows <select id="plClipCount"></select></label>
+                <button type="button" id="btnClLoop" class="on">Loop</button>
+                <button type="button" id="btnClOnce">Once</button>
+                <button type="button" id="btnClHalt">Once + Halt</button>
+                <div id="clNowRead" class="pl-flag">clips idle</div>
+              </div>
+              <div class="pl-col-head">Clips</div>
+              <div id="plClipRows"></div>
             </div>
           </div>
         </div>
@@ -1542,6 +1532,17 @@
       setStatus('Reset all + notes off');
       updatePlayheads();
       updateClockReadout();
+      if (typeof updateChainChrome === 'function') updateChainChrome();
+    }
+    function resetLists() {
+      resetAll();
+      document.querySelectorAll('#plPatRows .pl-row, #plClipRows .pl-row').forEach(r => {
+        r.classList.remove('now', 'clip-now');
+      });
+      flashBtn('btnResetLists');
+      flashBtn('btnResetListsPl');
+      setStatus('Lists reset — clock stopped');
+      if (typeof updateChainChrome === 'function') updateChainChrome();
     }
     function unstickPerfUi() {
       if (typeof perfHeld !== 'undefined') perfHeld.clear();
@@ -3356,7 +3357,7 @@
 
     function pageSections() {
       const tab = activeTab();
-      const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnPauseAll', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect', 'btnClipLoop', 'btnClipOnce', 'btnClipHalt'] };
+      const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnPauseAll', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect', 'btnResetLists'] };
       const resetSec = { box: document.getElementById('resetCluster'), els: ['btnGlobalPatternReset', 'btnHaltPattern', 'btnStopPattern', 'btnGlobalClockReset', 'btnResetAll', 'btnMapMode', 'btnHelpHints'] };
       if (tab === 'main') {
         return [
@@ -3392,18 +3393,19 @@
         return [clockSec, resetSec, { box: document.querySelector('#view-stack .panel'), els: ['btnStackReset', 'btnStackPriority', 'btnStackLatch'] }];
       }
       if (tab === 'clock') {
-        return [clockSec, resetSec, { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] }, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'clipBpmBox', 'clipBarsBox'] }];
+        return [clockSec, resetSec, { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] }, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'clipBpmBox', 'clipBarsBox', 'btnClipLoop', 'btnClipOnce', 'btnClipHalt'] }];
       }
       if (tab === 'playlist') {
         return [
           clockSec, resetSec,
           { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] },
           { box: document.querySelector('.tgroup.pllib'), els: ['plListSelect', 'btnPlSaveList', 'btnPlLoadList', 'btnPlDeleteList', 'btnPlExportList', 'btnPlImportList'] },
-          { box: document.querySelector('.tgroup.dump'), els: ['btnPlDump', 'plRowCount', 'btnPlSendRow', 'btnPlSendAll'] },
-          { box: document.querySelector('.tgroup.chain'), els: ['btnPlChain', 'plSlotA', 'plSlotB', 'btnSetChain'] },
-          { box: document.getElementById('plRows'), els: () => [...document.querySelectorAll('#plRows select, #plRows input')] },
-          { box: document.querySelector('.tgroup.plplay'), els: ['btnPlLoop', 'btnPlOnce', 'btnPlHalt'] },
-          { box: document.querySelector('.tgroup.clplay'), els: ['btnClLoop', 'btnClOnce', 'btnClHalt'] }
+          { box: document.querySelector('.tgroup.dump'), els: ['btnPlDump', 'btnPlSendRow', 'btnPlSendAll'] },
+          { box: document.querySelector('.tgroup.chain'), els: ['btnPlChain', 'btnSetChain', 'btnResetListsPl'] },
+          { box: document.querySelector('.tgroup.plplay'), els: ['plRowCount', 'btnPlLoop', 'btnPlOnce', 'btnPlHalt'] },
+          { box: document.getElementById('plPatRows'), els: () => [...document.querySelectorAll('#plPatRows select, #plPatRows input')] },
+          { box: document.querySelector('.tgroup.clplay'), els: ['plClipCount', 'btnClLoop', 'btnClOnce', 'btnClHalt'] },
+          { box: document.getElementById('plClipRows'), els: () => [...document.querySelectorAll('#plClipRows select, #plClipRows input')] }
         ];
       }
       return [clockSec, resetSec];
@@ -3869,9 +3871,20 @@
       }
       if (typeof playlistOnTick === 'function') playlistOnTick();
     }
+    function lightPerfNote(note, on) {
+      document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => {
+        el.classList.toggle('active', !!on);
+      });
+    }
     function playClipEvent(ev) {
-      if (ev.kind === 'on') { if (state.output) state.output.send([0x90 | midiChannelByte(), ev.note, ev.vel || 100]); }
-      else if (ev.kind === 'off') { if (state.output) state.output.send([0x80 | midiChannelByte(), ev.note, 0]); }
+      if (ev.kind === 'on') {
+        if (state.output) state.output.send([0x90 | midiChannelByte(), ev.note, ev.vel || 100]);
+        lightPerfNote(ev.note, true);
+      }
+      else if (ev.kind === 'off') {
+        if (state.output) state.output.send([0x80 | midiChannelByte(), ev.note, 0]);
+        lightPerfNote(ev.note, false);
+      }
       else if (ev.kind === 'start') sendRT(0xFA);
       else if (ev.kind === 'cont') sendRT(0xFB);
       else if (ev.kind === 'stop') sendRT(0xFC);
@@ -4240,6 +4253,11 @@
         if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyZ' && !isTextEntry(e.target)) {
           e.preventDefault();
           resetAll();
+          return;
+        }
+        if (e.altKey && !e.metaKey && !e.ctrlKey && e.code === 'KeyX' && !isTextEntry(e.target)) {
+          e.preventDefault();
+          resetLists();
           return;
         }
         if ((e.key === '\\' || e.code === 'Backslash') && !isTextEntry(e.target)) {
@@ -4730,7 +4748,7 @@
       if (!p.rows || !p.rows.length) p.rows = Array.from({ length: 22 }, emptyPlRow);
       while (p.rows.length < 22) p.rows.push(emptyPlRow());
       if (!p.clipRows) p.clipRows = [];
-      while (p.clipRows.length < 16) p.clipRows.push(emptyClipRow());
+      while (p.clipRows.length < 22) p.clipRows.push(emptyClipRow());
       if (p.clipCount == null) p.clipCount = 0;
     }
     function loadListLibrary() {
@@ -4789,8 +4807,17 @@
       return bits.join(' + ');
     }
     function rowCycleInfo(row) {
-      if (!row || row.type === 'rest' || !row.patternName) {
-        return { ticks: 0, text: '—', flag: '', clean: true };
+      if (!row || row.type === 'rest') {
+        return { ticks: 0, text: 'rest', flag: row ? (row.bars || 4) + ' bars' : '', clean: true };
+      }
+      if (row.type === 'eqbass') {
+        return { ticks: 0, text: 'EQ Bass · slot 1', flag: (row.bars || 4) + ' bars', clean: true };
+      }
+      if (row.type === 'eqmids') {
+        return { ticks: 0, text: 'EQ Mids · slot 13', flag: (row.bars || 4) + ' bars', clean: true };
+      }
+      if (!row.patternName) {
+        return { ticks: 0, text: 'pick a pattern', flag: '', clean: true };
       }
       const item = loadLibrary()[row.patternName];
       const longest = item ? longestFromHex(item.hex) : 16;
@@ -4817,7 +4844,7 @@
     function clipListTotalBars() {
       const p = state.playlist;
       let n = 0;
-      const count = p.rowCount || 0;
+      const count = p.clipCount || 0;
       for (let i = 0; i < count; i++) n += Math.max(1, (p.clipRows[i] && p.clipRows[i].bars) || 4);
       return n;
     }
@@ -4899,16 +4926,19 @@
       const box = document.getElementById('plClipRows');
       if (!box) return;
       box.innerHTML = '';
-      for (let i = 0; i < 16; i++) {
+      const count = p.clipCount || 0;
+      for (let i = 0; i < count; i++) {
         const row = p.clipRows[i] || emptyClipRow();
         const div = document.createElement('div');
-        div.className = 'pl-row' + (i >= (p.clipCount || 0) ? ' disabled' : '');
-        div.style.gridTemplateColumns = '36px 1fr 72px 1fr';
+        div.className = 'pl-row' + (p.clipRunning && p.clipIndex === i ? ' clip-now' : '');
+        const cf = clipFlag(row);
         div.innerHTML =
-          '<span>C' + (i + 1) + '</span>' +
-          '<select data-cl="name" data-i="' + i + '"></select>' +
-          '<input data-cl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" style="width:56px">' +
-          '<span class="pl-flag">' + (row.name || 'empty') + ' · ' + (row.bars || 4) + ' bars</span>';
+          '<span class="pl-idx">C' + (i + 1) + '</span>' +
+          '<div class="pl-clip">' +
+            '<select data-cl="name" data-i="' + i + '"></select>' +
+            '<input data-cl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" title="Clip bars">' +
+            '<span class="pl-flag ' + cf.cls + '">' + cf.text + '</span>' +
+          '</div>';
         box.appendChild(div);
         fillClipNameSelect(div.querySelector('[data-cl="name"]'), row.name);
       }
@@ -4925,7 +4955,7 @@
     }
     function firePlaylistClips() {
       const p = state.playlist;
-      if (!p.clipRunning || !p.rowCount) return;
+      if (!p.clipRunning || !p.clipCount) return;
       const t = p.clipTick || 0;
       const hit = clipRowAtTick(t);
       if (!hit || !hit.row || !hit.row.name) return;
@@ -4935,7 +4965,7 @@
       clip.events.forEach(ev => { if (ev.t === local) playClipEvent(ev); });
     }
     function clipFlag(row) {
-      if (!row || !row.name) return { text: 'empty clip', cls: '' };
+      if (!row || !row.name) return { text: 'empty · ' + ((row && row.bars) || 4) + ' bars', cls: '' };
       const clip = state.clock.clips && state.clock.clips[row.name];
       const want = Math.max(1, row.bars || 4) * 96;
       const have = clip ? clipDurationTicks(clip) : 0;
@@ -4949,57 +4979,63 @@
     function renderPlaylist() {
       ensurePlRows();
       const p = state.playlist;
-      p.clipCount = p.rowCount;
-      const box = document.getElementById('plRows');
+      const box = document.getElementById('plPatRows');
       if (!box) return;
       box.innerHTML = '';
-      for (let i = 0; i < 22; i++) {
-        const row = p.rows[i];
-        const crow = p.clipRows[i] || emptyClipRow();
+      for (let i = 0; i < p.rowCount; i++) {
+        const row = p.rows[i] || emptyPlRow();
         const div = document.createElement('div');
-        const live = i < p.rowCount;
         div.className = 'pl-row'
-          + (live ? '' : ' disabled')
           + (p.selectedRow === i ? ' selected' : '')
-          + (p.running && p.rowIndex === i ? ' now' : '')
-          + (p.clipRunning && p.clipIndex === i ? ' clip-now' : '');
+          + (p.running && p.rowIndex === i ? ' now' : '');
         const info = rowCycleInfo(row);
-        const cf = clipFlag(crow);
-        const slotDisabled = p.mode === 'chain';
-        const slotVal = p.mode === 'chain' ? chainSlotForRow(i) : row.slot;
+        const slotDisabled = p.mode === 'chain' || row.type !== 'pattern';
+        let slotVal = row.slot;
+        if (row.type === 'eqbass') slotVal = 1;
+        else if (row.type === 'eqmids') slotVal = 13;
+        else if (p.mode === 'chain') slotVal = chainSlotForRow(i);
+        const hidePat = row.type !== 'pattern';
         div.innerHTML =
           '<span class="pl-idx">' + (i + 1) + '</span>' +
           '<div class="pl-pat">' +
-            '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest</option></select>' +
-            '<select data-pl="pat" data-i="' + i + '"></select>' +
+            '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest</option><option value="eqbass">EQ Bass</option><option value="eqmids">EQ Mids</option></select>' +
+            '<select data-pl="pat" data-i="' + i + '"' + (hidePat ? ' disabled' : '') + '></select>' +
             '<input data-pl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" title="Pattern bars">' +
             '<select data-pl="slot" data-i="' + i + '"' + (slotDisabled ? ' disabled' : '') + '></select>' +
-            '<span class="pl-flag ' + (info.clean ? 'clean' : 'cut') + '">' + (row.type === 'rest' ? 'rest · ' + (row.bars || 4) + ' bars' : info.text + ' · ' + info.flag) + '</span>' +
-          '</div>' +
-          '<div class="pl-clip">' +
-            '<select data-cl="name" data-i="' + i + '"></select>' +
-            '<input data-cl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (crow.bars || 4) + '" title="Clip bars">' +
-            '<span class="pl-flag ' + cf.cls + '">' + cf.text + '</span>' +
+            '<span class="pl-flag ' + (info.clean ? 'clean' : 'cut') + '">' + info.text + (info.flag ? ' · ' + info.flag : '') + '</span>' +
           '</div>';
         box.appendChild(div);
         div.querySelector('.pl-idx').addEventListener('click', (ev) => {
           ev.stopPropagation();
           state.playlist.selectedRow = i;
-          document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('selected', n === i));
+          document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('selected', n === i));
         });
         const typeSel = div.querySelector('[data-pl="type"]');
         typeSel.value = row.type || 'pattern';
         fillPatternSelect(div.querySelector('[data-pl="pat"]'), row.patternName);
         const slotSel = div.querySelector('[data-pl="slot"]');
-        fillSlotSelect(slotSel, slotVal);
-        fillClipNameSelect(div.querySelector('[data-cl="name"]'), crow.name);
-        if (p.mode === 'dump') {
-          const taken = usedDumpSlots(i);
-          Array.from(slotSel.options).forEach(o => {
-            if (taken.has(+o.value) && +o.value !== +row.slot) o.disabled = true;
-          });
+        if (row.type === 'eqbass' || row.type === 'eqmids') {
+          slotSel.innerHTML = '';
+          const o = document.createElement('option');
+          o.value = slotVal;
+          o.textContent = String(slotVal);
+          slotSel.appendChild(o);
+          slotSel.value = String(slotVal);
+        } else {
+          fillSlotSelect(slotSel, slotVal);
+          if (p.mode === 'dump') {
+            const taken = usedDumpSlots(i);
+            Array.from(slotSel.options).forEach(opt => {
+              if (taken.has(+opt.value) && +opt.value !== +row.slot) opt.disabled = true;
+            });
+          }
         }
       }
+      renderClipRows();
+      const rc = document.getElementById('plRowCount');
+      if (rc) rc.value = String(p.rowCount);
+      const cc = document.getElementById('plClipCount');
+      if (cc) cc.value = String(p.clipCount || 0);
       updateChainChrome();
     }
     function updateChainChrome() {
@@ -5027,7 +5063,7 @@
       if (!p.running) {
         if (read) read.textContent = 'patterns ' + tot + ' bars';
         if (bar) bar.style.width = '0%';
-        if (now) now.textContent = p.setChain ? 'chain set — row 1 in slot ' + p.slotA : 'patterns idle · ' + tot + ' bars';
+        if (now) now.textContent = p.setChain ? 'chain set — press Play' : 'patterns idle · ' + tot + ' bars';
       }
       if (!p.clipRunning) {
         if (cread) cread.textContent = 'clips ' + ctot + ' bars';
@@ -5056,7 +5092,7 @@
         if (now) now.textContent = 'pattern row ' + (hit.i + 1) + ' · bar ' + barInRow + ' of ' + rowBars + ' · list bar ' + barInList + ' of ' + chainTotalBars();
         if (read) read.textContent = barInList + ' / ' + chainTotalBars() + ' bars';
         if (barEl) barEl.style.width = (pTotal ? Math.min(100, (p.patternTick / pTotal) * 100) : 0) + '%';
-        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
+        document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
         if (hit.i !== p.rowIndex) {
           p.rowIndex = hit.i;
           p.preloaded = false;
@@ -5069,8 +5105,8 @@
         }
         if (p.patternTick >= pTotal) finishPatternList();
       }
-      if (p.clipRunning && p.rowCount) {
-        const hit = rowAtLocalTick(p.clipRows, p.rowCount, p.clipTick, 'bars');
+      if (p.clipRunning && p.clipCount) {
+        const hit = rowAtLocalTick(p.clipRows, p.clipCount, p.clipTick, 'bars');
         const rowBars = Math.max(1, (hit.row && hit.row.bars) || 4);
         const rowTick = p.clipTick - hit.start;
         const barInRow = Math.floor(rowTick / 96) + 1;
@@ -5081,7 +5117,7 @@
         if (now) now.textContent = 'clip row ' + (hit.i + 1) + ' · bar ' + barInRow + ' of ' + rowBars + ' · list bar ' + barInList + ' of ' + clipListTotalBars();
         if (read) read.textContent = barInList + ' / ' + clipListTotalBars() + ' bars';
         if (barEl) barEl.style.width = (cTotal ? Math.min(100, (p.clipTick / cTotal) * 100) : 0) + '%';
-        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === hit.i));
+        document.querySelectorAll('#plClipRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === hit.i));
         if (hit.i !== p.clipIndex) {
           p.clipIndex = hit.i;
         }
@@ -5095,7 +5131,7 @@
         p.rowIndex = 0;
         p.preloaded = false;
         enterPlaylistRow(0);
-        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === 0));
+        document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === 0));
         return;
       }
       p.running = false;
@@ -5115,7 +5151,7 @@
       if (mode === 'loop') {
         p.clipTick = 0;
         p.clipIndex = 0;
-        document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === 0));
+        document.querySelectorAll('#plClipRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === 0));
         return;
       }
       p.clipRunning = false;
@@ -5129,26 +5165,35 @@
       }
       updateChainChrome();
     }
+    function rowDestSlot(idx) {
+      const row = state.playlist.rows[idx];
+      if (!row) return null;
+      if (row.type === 'eqbass') return 1;
+      if (row.type === 'eqmids') return 13;
+      if (row.type === 'pattern') return chainSlotForRow(idx);
+      return null;
+    }
     function enterPlaylistRow(idx) {
       const p = state.playlist;
       const row = p.rows[idx];
       if (!row) return;
-      if (row.type === 'rest' || !row.patternName) {
+      if (row.type === 'rest') {
         haltPattern();
         p.seqHalted = true;
         setStatus('Rest row ' + (idx + 1));
         return;
       }
-      const slot = chainSlotForRow(idx);
+      const slot = rowDestSlot(idx);
+      if (slot == null) { setStatus('Row ' + (idx + 1) + ' needs a type'); return; }
       pcToSlot(slot);
       if (p.seqHalted) {
         sendRT(0xFA);
         p.seqHalted = false;
         state.clock.halted = false;
         state.clock.seqStep = 0;
-        setStatus('Chain after rest → slot ' + slot + ' · ' + row.patternName);
+        setStatus('Chain after rest → slot ' + slot);
       } else {
-        setStatus('Chain → slot ' + slot + ' · ' + row.patternName);
+        setStatus('Chain → slot ' + slot + (row.patternName ? ' · ' + row.patternName : ''));
       }
     }
     function preloadNextRow(idx) {
@@ -5179,7 +5224,7 @@
       for (let i = 0; i < p.rowCount; i++) {
         const r = p.rows[i];
         if (!r) return false;
-        if (r.type === 'rest') continue;
+        if (r.type === 'rest' || r.type === 'eqbass' || r.type === 'eqmids') continue;
         if (r.type === 'pattern' && r.patternName) continue;
         return false;
       }
@@ -5189,18 +5234,22 @@
       const p = state.playlist;
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
-      if (!playlistRowsReady()) { setStatus('Every row in the count must be Pattern or Rest'); return; }
+      if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
       let dumped = 0;
       let firstSlot = null;
       for (let i = 0; i < p.rowCount; i++) {
         const row = p.rows[i];
-        if (!row || row.type === 'rest' || !row.patternName) continue;
-        const slot = chainSlotForRow(i);
-        if (!dumpNameToSlot(row.patternName, slot)) return;
-        dumped++;
-        if (firstSlot == null) firstSlot = slot;
+        if (!row || row.type === 'rest') continue;
+        if (row.type === 'pattern') {
+          const slot = chainSlotForRow(i);
+          if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) return;
+          dumped++;
+          if (firstSlot == null) firstSlot = slot;
+        } else if (firstSlot == null) {
+          firstSlot = rowDestSlot(i);
+        }
       }
-      if (firstSlot == null) { setStatus('Need at least one pattern row'); return; }
+      if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
       pcToSlot(firstSlot);
       p.setChain = true;
       p.seqHalted = false;
@@ -5211,10 +5260,10 @@
     function playlistOnPlay(fromStart) {
       const p = state.playlist;
       const wantChain = p.mode === 'chain' && p.setChain && p.rowCount > 0;
-      const wantClips = p.rowCount > 0 && p.clipRows.some((r, i) => i < p.rowCount && r && r.name);
+      const wantClips = (p.clipCount || 0) > 0 && p.clipRows.some((r, i) => i < p.clipCount && r && r.name);
       if (!fromStart && (p.running || p.clipRunning)) return;
       if (wantChain && !playlistRowsReady()) {
-        setStatus('Every pattern row in the count must be a pattern or a rest');
+        setStatus('Every pattern row must be Pattern, Rest, EQ Bass, or EQ Mids');
         return;
       }
       if (fromStart) {
@@ -5278,7 +5327,7 @@
         slotB: p.slotB,
         playMode: p.playMode,
         clipPlayMode: p.clipPlayMode || 'loop',
-        clipCount: p.rowCount || 0,
+        clipCount: p.clipCount || 0,
         clipRows: JSON.parse(JSON.stringify(p.clipRows || [])),
         clips: clips,
         patterns: patterns
@@ -5316,8 +5365,6 @@
       }
       const rc = document.getElementById('plRowCount');
       if (rc) rc.value = String(p.rowCount);
-      fillSlotSelect(document.getElementById('plSlotA'), p.slotA);
-      fillSlotSelect(document.getElementById('plSlotB'), p.slotB);
       const cc = document.getElementById('plClipCount');
       if (cc) cc.value = String(p.clipCount || 0);
       renderPlaylist();
@@ -5365,7 +5412,7 @@
       const sel = document.getElementById('plClipCount');
       if (!sel) return;
       if (!sel.options.length) {
-        for (let i = 0; i <= 16; i++) {
+        for (let i = 0; i <= 22; i++) {
           const o = document.createElement('option');
           o.value = i;
           o.textContent = String(i);
@@ -5405,6 +5452,12 @@
         state.playlist.setChain = false;
         renderPlaylist();
       });
+      document.getElementById('plClipCount')?.addEventListener('change', (e) => {
+        state.playlist.clipCount = Math.max(0, Math.min(22, parseInt(e.target.value, 10) || 0));
+        renderPlaylist();
+      });
+      document.getElementById('btnResetLists')?.addEventListener('click', resetLists);
+      document.getElementById('btnResetListsPl')?.addEventListener('click', resetLists);
       document.getElementById('btnSetChain')?.addEventListener('click', setChainNow);
       document.getElementById('btnPlSendRow')?.addEventListener('click', () => sendDumpRow());
       document.getElementById('btnPlSendAll')?.addEventListener('click', sendDumpAll);
@@ -5414,20 +5467,19 @@
       document.getElementById('btnClLoop')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'loop'; updateChainChrome(); });
       document.getElementById('btnClOnce')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'once'; updateChainChrome(); });
       document.getElementById('btnClHalt')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'halt'; updateChainChrome(); });
-      document.getElementById('plRows')?.addEventListener('change', (e) => {
+      document.getElementById('plClipRows')?.addEventListener('change', (e) => {
         const el = e.target;
         const i = parseInt(el.dataset.i, 10);
         if (isNaN(i)) return;
         ensurePlRows();
-        if (el.dataset.cl) {
-          const row = state.playlist.clipRows[i];
-          if (!row) return;
-          if (el.dataset.cl === 'name') row.name = el.value;
-          if (el.dataset.cl === 'bars') {
-            row.bars = Math.max(1, Math.min(256, parseInt(el.value, 10) || 4));
-            el.blur();
-          }
+        const row = state.playlist.clipRows[i];
+        if (!row) return;
+        if (el.dataset.cl === 'name') row.name = el.value;
+        if (el.dataset.cl === 'bars') {
+          row.bars = Math.max(1, Math.min(256, parseInt(el.value, 10) || 4));
+          el.blur();
         }
+        renderPlaylist();
       });
       document.getElementById('btnPlRefreshLib')?.addEventListener('click', () => {
         refreshPlaylistMenus();
@@ -5465,7 +5517,7 @@
         refreshPlListSelect();
         setStatus('Deleted list ' + name);
       });
-      document.getElementById('plRows')?.addEventListener('change', (e) => {
+      document.getElementById('plPatRows')?.addEventListener('change', (e) => {
         const el = e.target;
         const i = parseInt(el.dataset.i, 10);
         if (isNaN(i)) return;
