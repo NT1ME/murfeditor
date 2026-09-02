@@ -299,19 +299,53 @@
     }
     .pl-row {
       display: grid;
-      grid-template-columns: 36px 88px 1fr 72px 70px 1fr;
-      gap: 6px;
-      align-items: center;
+      grid-template-columns: 28px minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 8px;
+      align-items: stretch;
       padding: 4px 0;
-      border-bottom: 1px solid var(--border);
     }
-    .pl-row.now { background: #1e2a1e; }
+    .pl-row.now .pl-pat { box-shadow: inset 0 0 0 1px #c4b48a; }
+    .pl-row.clip-now .pl-clip { box-shadow: inset 0 0 0 1px #7dffb0; }
+    .pl-row.selected .pl-idx { color: #fff; }
     .pl-row.disabled { opacity: 0.35; pointer-events: none; }
-    .pl-row label { font-size: 11px; color: var(--text-dim); }
-    .pl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
-    .pl-flag { font-size: 11px; color: var(--text-dim); }
+    .pl-pat, .pl-clip {
+      display: grid;
+      gap: 4px;
+      padding: 6px;
+      border-radius: 6px;
+      align-items: center;
+    }
+    .pl-pat {
+      grid-template-columns: 72px minmax(90px, 1fr) 52px 64px;
+      background: rgba(196, 180, 138, 0.12);
+      border: 1px solid rgba(196, 180, 138, 0.28);
+    }
+    .pl-clip {
+      grid-template-columns: minmax(90px, 1fr) 52px;
+      background: rgba(125, 255, 176, 0.08);
+      border: 1px solid rgba(125, 255, 176, 0.22);
+    }
+    .pl-idx { font-size: 11px; color: var(--text-dim); padding-top: 8px; }
+    .pl-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .pl-flag { font-size: 10px; color: var(--text-dim); grid-column: 1 / -1; }
     .pl-flag.cut { color: #fb923c; }
     .pl-flag.clean { color: #4ade80; }
+    .pl-grid-head {
+      display: grid;
+      grid-template-columns: 28px minmax(0, 1.15fr) minmax(0, 1fr);
+      gap: 8px;
+      font-size: 11px;
+      color: var(--text-dim);
+      margin: 6px 0 4px;
+    }
+    .tgroup.dump { border-color: rgba(196, 180, 138, 0.45); }
+    .tgroup.chain { border-color: rgba(96, 165, 250, 0.45); }
+    .tgroup.pllib { border-color: rgba(244, 244, 240, 0.25); }
+    .tgroup.plplay { border-color: rgba(196, 180, 138, 0.4); }
+    .tgroup.clplay { border-color: rgba(125, 255, 176, 0.35); }
+    #chainProgress > span { background: #c4b48a; }
+    #clipListProgress { flex: 1; height: 8px; background: #2a2a30; border-radius: 4px; overflow: hidden; min-width: 80px; }
+    #clipListProgress > span { display: block; height: 100%; width: 0; background: #7dffb0; }
     #clockCluster { flex-direction: column; align-items: stretch; }
     #clockRow1, #clockRow2 { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
     button.map-pick { outline: 2px solid #6ea8ff; }
@@ -817,6 +851,12 @@
             </select>
           </label>
         </div>
+        <div class="tgroup" id="projectCluster">
+          <span class="tlabel">Project</span>
+          <button type="button" id="btnSaveProject" data-kbd="⌘⇧S">Save project</button>
+          <button type="button" id="btnOpenProject" data-kbd="⌘⇧O">Open project</button>
+          <input type="file" id="projectFile" accept=".json,application/json" hidden>
+        </div>
         <div id="clockCluster" class="tgroup">
           <div id="clockRow1">
             <span class="tlabel">Clock</span>
@@ -842,7 +882,11 @@
             </div>
             <div id="chainProgressWrap">
               <div id="chainProgress"><span id="chainProgressBar"></span></div>
-              <span id="chainProgressRead">chain —</span>
+              <span id="chainProgressRead">patterns —</span>
+            </div>
+            <div id="chainProgressWrap">
+              <div id="clipListProgress"><span id="clipListProgressBar"></span></div>
+              <span id="clipListProgressRead">clips —</span>
             </div>
           </div>
         </div>
@@ -1130,9 +1174,6 @@
             <button type="button" id="btnSaveClip">Save take</button>
             <button type="button" id="btnLoadClip">Load</button>
             <button type="button" id="btnDeleteClip">Delete clip</button>
-            <button type="button" id="btnSaveProject">Save project</button>
-            <button type="button" id="btnOpenProject">Open project</button>
-            <input type="file" id="projectFile" accept=".json,application/json" hidden>
             <label>Clip BPM <input id="clipBpmBox" type="number" min="20" max="300" value="120" style="width:56px"></label>
             <label>Length (bars) <input id="clipBarsBox" type="number" min="0" max="64" value="0" style="width:48px" title="0 = free length. Rec punches out after this many bars."></label>
           </div>
@@ -1141,42 +1182,50 @@
 
       <div class="view" id="view-playlist">
         <div class="panel">
-          <h2>Playlist</h2>
-          <p style="color:var(--text-dim);font-size:12px;margin-bottom:8px">
-            Dump fills slots (SysEx only). Chain ping-pongs A/B: Set chain dumps row 1, Play hands off with PC + Start. Rest rows Halt and keep the clock.
-          </p>
-          <div class="pl-toolbar">
-            <button type="button" id="btnPlDump" class="on">Dump</button>
-            <button type="button" id="btnPlChain">Chain</button>
-            <label>Rows
-              <select id="plRowCount"></select>
-            </label>
-            <label>Slot A
-              <select id="plSlotA"></select>
-            </label>
-            <label>Slot B
-              <select id="plSlotB"></select>
-            </label>
-            <button type="button" id="btnSetChain">Set chain</button>
-            <button type="button" id="btnPlSendRow">Send this row</button>
-            <button type="button" id="btnPlSendAll">Send all rows</button>
+          <div class="tgroup pllib" style="margin-bottom:10px">
+            <span class="tlabel">Lists</span>
+            <select id="plListSelect"><option value="">— lists —</option></select>
+            <button type="button" id="btnPlSaveList" data-kbd="⌘S">Save list</button>
+            <button type="button" id="btnPlLoadList" data-kbd="⌘O">Load list</button>
+            <button type="button" id="btnPlDeleteList" data-kbd="⌘X">Delete list</button>
+            <button type="button" id="btnPlExportList">Export list</button>
+            <button type="button" id="btnPlImportList">Import list</button>
+            <input type="file" id="plListFile" accept=".json,application/json" hidden>
           </div>
-          <div class="pl-toolbar">
-            <button type="button" id="btnPlLoop" class="on">Loop</button>
-            <button type="button" id="btnPlOnce">Once</button>
-            <button type="button" id="btnPlHalt">Once + Halt</button>
-            <label>Chain clip
-              <select id="plClipSelect"><option value="">— none —</option></select>
-            </label>
-            <label>Lists
-              <select id="plListSelect"><option value="">— lists —</option></select>
-            </label>
-            <button type="button" id="btnPlSaveList">Save list</button>
-            <button type="button" id="btnPlLoadList">Load list</button>
-            <button type="button" id="btnPlDeleteList">Delete list</button>
+          <div class="row" style="gap:10px;align-items:stretch;margin-bottom:10px">
+            <div class="tgroup dump" style="flex:1">
+              <span class="tlabel">Dump</span>
+              <button type="button" id="btnPlDump" class="on">Dump</button>
+              <label>Rows <select id="plRowCount"></select></label>
+              <button type="button" id="btnPlSendRow">Send this row</button>
+              <button type="button" id="btnPlSendAll">Send all rows</button>
+            </div>
+            <div class="tgroup chain" style="flex:1">
+              <span class="tlabel">Chain</span>
+              <button type="button" id="btnPlChain">Chain</button>
+              <label>Slot A <select id="plSlotA"></select></label>
+              <label>Slot B <select id="plSlotB"></select></label>
+              <button type="button" id="btnSetChain">Set chain</button>
+            </div>
           </div>
-          <div id="plNowRead" class="pl-flag" style="margin-bottom:8px">chain idle</div>
+          <div class="pl-grid-head"><span>#</span><span>Patterns</span><span>Clips</span></div>
           <div id="plRows"></div>
+          <div class="row" style="gap:10px;margin-top:12px">
+            <div class="tgroup plplay" style="flex:1">
+              <span class="tlabel">Pattern list</span>
+              <button type="button" id="btnPlLoop" class="on">Loop</button>
+              <button type="button" id="btnPlOnce">Once</button>
+              <button type="button" id="btnPlHalt">Once + Halt</button>
+              <div id="plNowRead" class="pl-flag">patterns idle</div>
+            </div>
+            <div class="tgroup clplay" style="flex:1">
+              <span class="tlabel">Clip list</span>
+              <button type="button" id="btnClLoop" class="on">Loop</button>
+              <button type="button" id="btnClOnce">Once</button>
+              <button type="button" id="btnClHalt">Once + Halt</button>
+              <div id="clNowRead" class="pl-flag">clips idle</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1264,8 +1313,16 @@
         setChain: false,
         playMode: 'loop',
         clipName: '',
+        clipCount: 0,
+        clipRows: [],
+        selectedRow: 0,
         running: false,
+        clipRunning: false,
         rowIndex: 0,
+        clipIndex: 0,
+        patternTick: 0,
+        clipTick: 0,
+        clipPlayMode: 'loop',
         ping: 'A',
         preloaded: false
       }
@@ -1470,6 +1527,14 @@
       sendCC(90, 127);
       state.clock.seqStep = 0;
       state.clock.playClip = false;
+      if (state.playlist) {
+        state.playlist.running = false;
+        state.playlist.clipRunning = false;
+        state.playlist.patternTick = 0;
+        state.playlist.clipTick = 0;
+        state.playlist.rowIndex = 0;
+        state.playlist.clipIndex = 0;
+      }
       flashBtn('btnResetAll');
       setStatus('Reset all + notes off');
       updatePlayheads();
@@ -3160,7 +3225,7 @@
     }
 
     function cycleAppTab(dir) {
-      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock'];
+      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist'];
       const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
       let i = order.indexOf(cur);
       if (i < 0) i = 0;
@@ -3222,7 +3287,19 @@
         return [clockSec, resetSec, { box: document.querySelector('#view-stack .panel'), els: ['btnStackReset', 'btnStackPriority', 'btnStackLatch'] }];
       }
       if (tab === 'clock') {
-        return [clockSec, resetSec, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'clipBpmBox', 'clipBarsBox', 'btnSaveProject', 'btnOpenProject'] }];
+        return [clockSec, resetSec, { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] }, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'clipBpmBox', 'clipBarsBox'] }];
+      }
+      if (tab === 'playlist') {
+        return [
+          clockSec, resetSec,
+          { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] },
+          { box: document.querySelector('.tgroup.pllib'), els: ['plListSelect', 'btnPlSaveList', 'btnPlLoadList', 'btnPlDeleteList', 'btnPlExportList', 'btnPlImportList'] },
+          { box: document.querySelector('.tgroup.dump'), els: ['btnPlDump', 'plRowCount', 'btnPlSendRow', 'btnPlSendAll'] },
+          { box: document.querySelector('.tgroup.chain'), els: ['btnPlChain', 'plSlotA', 'plSlotB', 'btnSetChain'] },
+          { box: document.getElementById('plRows'), els: () => [...document.querySelectorAll('#plRows select, #plRows input')] },
+          { box: document.querySelector('.tgroup.plplay'), els: ['btnPlLoop', 'btnPlOnce', 'btnPlHalt'] },
+          { box: document.querySelector('.tgroup.clplay'), els: ['btnClLoop', 'btnClOnce', 'btnClHalt'] }
+        ];
       }
       return [clockSec, resetSec];
     }
@@ -4233,15 +4310,23 @@
         if ((e.metaKey || e.ctrlKey) && k === 'x') {
           e.preventDefault();
           if (activeTab() === 'clock') document.getElementById('btnDeleteClip')?.click();
+          else if (activeTab() === 'playlist') document.getElementById('btnPlDeleteList')?.click();
           else document.getElementById('btnClearAll')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 's') {
           e.preventDefault();
-          if (activeTab() === 'clock') {
-            if (e.shiftKey) document.getElementById('btnSaveProject')?.click();
-            else document.getElementById('btnSaveClip')?.click();
-          } else document.getElementById('btnSaveLibrary')?.click();
+          if (e.shiftKey) { document.getElementById('btnSaveProject')?.click(); return; }
+          if (activeTab() === 'clock') document.getElementById('btnSaveClip')?.click();
+          else if (activeTab() === 'playlist') document.getElementById('btnPlSaveList')?.click();
+          else document.getElementById('btnSaveLibrary')?.click();
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'o') {
+          e.preventDefault();
+          if (e.shiftKey) { document.getElementById('btnOpenProject')?.click(); return; }
+          if (activeTab() === 'clock') document.getElementById('btnLoadClip')?.click();
+          else if (activeTab() === 'playlist') document.getElementById('btnPlLoadList')?.click();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && (e.key === ',' || e.key === '.')) {
@@ -4521,10 +4606,16 @@
     function emptyPlRow() {
       return { type: 'pattern', patternName: '', slot: 12, bars: 4 };
     }
+    function emptyClipRow() {
+      return { name: '', bars: 4 };
+    }
     function ensurePlRows() {
       const p = state.playlist;
       if (!p.rows || !p.rows.length) p.rows = Array.from({ length: 22 }, emptyPlRow);
       while (p.rows.length < 22) p.rows.push(emptyPlRow());
+      if (!p.clipRows) p.clipRows = [];
+      while (p.clipRows.length < 16) p.clipRows.push(emptyClipRow());
+      if (p.clipCount == null) p.clipCount = 0;
     }
     function loadListLibrary() {
       try { return JSON.parse(localStorage.getItem(PLAYLIST_KEY) || '{}'); } catch (_) { return {}; }
@@ -4607,6 +4698,25 @@
       return n;
     }
     function chainTotalTicks() { return chainTotalBars() * 96; }
+    function clipListTotalBars() {
+      const p = state.playlist;
+      let n = 0;
+      const count = p.rowCount || 0;
+      for (let i = 0; i < count; i++) n += Math.max(1, (p.clipRows[i] && p.clipRows[i].bars) || 4);
+      return n;
+    }
+    function clipListTotalTicks() { return clipListTotalBars() * 96; }
+    function rowAtLocalTick(rows, count, t, barsKey) {
+      let acc = 0;
+      let idx = Math.max(0, count - 1);
+      for (let i = 0; i < count; i++) {
+        const len = Math.max(1, (rows[i] && rows[i][barsKey]) || 4) * 96;
+        if (t < acc + len) return { i: i, start: acc, row: rows[i], len: len };
+        acc += len;
+        idx = i;
+      }
+      return { i: idx, start: acc, row: rows[idx], len: 96 };
+    }
     function rowStartTick(idx) {
       const p = state.playlist;
       let t = 0;
@@ -4648,34 +4758,118 @@
       }
       return used;
     }
+    function fillClipNameSelect(sel, value) {
+      if (!sel) return;
+      const clips = (state.clock && state.clock.clips) || {};
+      sel.innerHTML = '<option value="">— clip —</option>';
+      Object.keys(clips).sort().forEach(n => {
+        const o = document.createElement('option');
+        o.value = n;
+        o.textContent = n;
+        sel.appendChild(o);
+      });
+      if (value && clips[value]) sel.value = value;
+    }
+    function renderClipRows() {
+      ensurePlRows();
+      const p = state.playlist;
+      const box = document.getElementById('plClipRows');
+      if (!box) return;
+      box.innerHTML = '';
+      for (let i = 0; i < 16; i++) {
+        const row = p.clipRows[i] || emptyClipRow();
+        const div = document.createElement('div');
+        div.className = 'pl-row' + (i >= (p.clipCount || 0) ? ' disabled' : '');
+        div.style.gridTemplateColumns = '36px 1fr 72px 1fr';
+        div.innerHTML =
+          '<span>C' + (i + 1) + '</span>' +
+          '<select data-cl="name" data-i="' + i + '"></select>' +
+          '<input data-cl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" style="width:56px">' +
+          '<span class="pl-flag">' + (row.name || 'empty') + ' · ' + (row.bars || 4) + ' bars</span>';
+        box.appendChild(div);
+        fillClipNameSelect(div.querySelector('[data-cl="name"]'), row.name);
+      }
+    }
+    function clipRowAtTick(t) {
+      const p = state.playlist;
+      let acc = 0;
+      for (let i = 0; i < (p.clipCount || 0); i++) {
+        const len = Math.max(1, (p.clipRows[i] && p.clipRows[i].bars) || 4) * 96;
+        if (t < acc + len) return { i: i, start: acc, row: p.clipRows[i] };
+        acc += len;
+      }
+      return null;
+    }
+    function firePlaylistClips() {
+      const p = state.playlist;
+      if (!p.clipRunning || !p.rowCount) return;
+      const t = p.clipTick || 0;
+      const hit = clipRowAtTick(t);
+      if (!hit || !hit.row || !hit.row.name) return;
+      const clip = state.clock.clips && state.clock.clips[hit.row.name];
+      if (!clip || !clip.events) return;
+      const local = t - hit.start;
+      clip.events.forEach(ev => { if (ev.t === local) playClipEvent(ev); });
+    }
+    function clipFlag(row) {
+      if (!row || !row.name) return { text: 'empty clip', cls: '' };
+      const clip = state.clock.clips && state.clock.clips[row.name];
+      const want = Math.max(1, row.bars || 4) * 96;
+      const have = clip ? clipDurationTicks(clip) : 0;
+      if (!have) return { text: row.name + ' · ' + row.bars + ' bars', cls: '' };
+      const clean = have && want % have === 0;
+      const text = clean
+        ? (want / have) + ' clean pass' + (want / have === 1 ? '' : 'es')
+        : 'clip ' + (have / 96).toFixed(2) + ' bars in a ' + row.bars + ' bar row';
+      return { text: text, cls: clean ? 'clean' : 'cut' };
+    }
     function renderPlaylist() {
       ensurePlRows();
       const p = state.playlist;
+      p.clipCount = p.rowCount;
       const box = document.getElementById('plRows');
       if (!box) return;
-      const used = usedDumpSlots(-1);
       box.innerHTML = '';
       for (let i = 0; i < 22; i++) {
         const row = p.rows[i];
+        const crow = p.clipRows[i] || emptyClipRow();
         const div = document.createElement('div');
-        div.className = 'pl-row' + (i >= p.rowCount ? ' disabled' : '') + (p.running && p.rowIndex === i ? ' now' : '');
+        const live = i < p.rowCount;
+        div.className = 'pl-row'
+          + (live ? '' : ' disabled')
+          + (p.selectedRow === i ? ' selected' : '')
+          + (p.running && p.rowIndex === i ? ' now' : '')
+          + (p.clipRunning && p.clipIndex === i ? ' clip-now' : '');
         const info = rowCycleInfo(row);
+        const cf = clipFlag(crow);
         const slotDisabled = p.mode === 'chain';
         const slotVal = p.mode === 'chain' ? ((i % 2 === 0) ? p.slotA : p.slotB) : row.slot;
         div.innerHTML =
-          '<span>R' + (i + 1) + '</span>' +
-          '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest</option></select>' +
-          '<select data-pl="pat" data-i="' + i + '"></select>' +
-          '<input data-pl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" style="width:56px">' +
-          '<select data-pl="slot" data-i="' + i + '"' + (slotDisabled ? ' disabled' : '') + '></select>' +
-          '<span class="pl-flag ' + (info.clean ? 'clean' : 'cut') + '">' + (row.type === 'rest' ? 'rest ' + (row.bars || 4) + ' bars' : info.text + ' · ' + info.flag) + '</span>';
+          '<span class="pl-idx">' + (i + 1) + '</span>' +
+          '<div class="pl-pat">' +
+            '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest</option></select>' +
+            '<select data-pl="pat" data-i="' + i + '"></select>' +
+            '<input data-pl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" title="Pattern bars">' +
+            '<select data-pl="slot" data-i="' + i + '"' + (slotDisabled ? ' disabled' : '') + '></select>' +
+            '<span class="pl-flag ' + (info.clean ? 'clean' : 'cut') + '">' + (row.type === 'rest' ? 'rest · ' + (row.bars || 4) + ' bars' : info.text + ' · ' + info.flag) + '</span>' +
+          '</div>' +
+          '<div class="pl-clip">' +
+            '<select data-cl="name" data-i="' + i + '"></select>' +
+            '<input data-cl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (crow.bars || 4) + '" title="Clip bars">' +
+            '<span class="pl-flag ' + cf.cls + '">' + cf.text + '</span>' +
+          '</div>';
         box.appendChild(div);
+        div.querySelector('.pl-idx').addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          state.playlist.selectedRow = i;
+          document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('selected', n === i));
+        });
         const typeSel = div.querySelector('[data-pl="type"]');
         typeSel.value = row.type || 'pattern';
-        const patSel = div.querySelector('[data-pl="pat"]');
-        fillPatternSelect(patSel, row.patternName);
+        fillPatternSelect(div.querySelector('[data-pl="pat"]'), row.patternName);
         const slotSel = div.querySelector('[data-pl="slot"]');
         fillSlotSelect(slotSel, slotVal);
+        fillClipNameSelect(div.querySelector('[data-cl="name"]'), crow.name);
         if (p.mode === 'dump') {
           const taken = usedDumpSlots(i);
           Array.from(slotSel.options).forEach(o => {
@@ -4693,6 +4887,9 @@
       document.getElementById('btnPlLoop')?.classList.toggle('on', p.playMode === 'loop');
       document.getElementById('btnPlOnce')?.classList.toggle('on', p.playMode === 'once');
       document.getElementById('btnPlHalt')?.classList.toggle('on', p.playMode === 'halt');
+      document.getElementById('btnClLoop')?.classList.toggle('on', (p.clipPlayMode || 'loop') === 'loop');
+      document.getElementById('btnClOnce')?.classList.toggle('on', p.clipPlayMode === 'once');
+      document.getElementById('btnClHalt')?.classList.toggle('on', p.clipPlayMode === 'halt');
       const a = document.getElementById('plSlotA');
       const b = document.getElementById('plSlotB');
       if (a) a.disabled = p.mode !== 'chain';
@@ -4701,53 +4898,116 @@
       document.getElementById('btnPlSendAll').disabled = p.mode !== 'dump';
       document.getElementById('btnPlSendRow').disabled = p.mode !== 'dump';
       const tot = chainTotalBars();
+      const ctot = clipListTotalBars();
       const read = document.getElementById('chainProgressRead');
       const bar = document.getElementById('chainProgressBar');
+      const cread = document.getElementById('clipListProgressRead');
+      const cbar = document.getElementById('clipListProgressBar');
       const now = document.getElementById('plNowRead');
+      const cnow = document.getElementById('clNowRead');
       if (!p.running) {
-        if (read) read.textContent = 'chain ' + tot + ' bars';
+        if (read) read.textContent = 'patterns ' + tot + ' bars';
         if (bar) bar.style.width = '0%';
-        if (now) now.textContent = p.setChain ? 'chain set — row 1 on slot ' + p.slotA : 'chain idle · ' + tot + ' bars';
+        if (now) now.textContent = p.setChain ? 'chain set — row 1 in slot ' + p.slotA : 'patterns idle · ' + tot + ' bars';
+      }
+      if (!p.clipRunning) {
+        if (cread) cread.textContent = 'clips ' + ctot + ' bars';
+        if (cbar) cbar.style.width = '0%';
+        if (cnow) cnow.textContent = 'clips idle · ' + ctot + ' bars';
       }
     }
     function playlistOnTick() {
       const p = state.playlist;
-      if (!p.running) return;
-      const c = state.clock;
-      const total = chainTotalTicks();
-      const barEl = document.getElementById('chainProgressBar');
-      const read = document.getElementById('chainProgressRead');
-      const now = document.getElementById('plNowRead');
-      const t = c.tick;
-      const pct = total ? Math.max(0, Math.min(100, (t / total) * 100)) : 0;
-      if (barEl) barEl.style.width = pct + '%';
-      let acc = 0;
-      let idx = p.rowCount - 1;
-      for (let i = 0; i < p.rowCount; i++) {
-        const len = Math.max(1, p.rows[i].bars || 4) * 96;
-        if (t < acc + len) { idx = i; break; }
-        acc += len;
-      }
-      const row = p.rows[idx];
-      const rowTick = t - rowStartTick(idx);
-      const rowBars = Math.max(1, row.bars || 4);
-      const barInRow = Math.floor(rowTick / 96) + 1;
-      const barInChain = Math.floor(t / 96) + 1;
-      if (now) now.textContent = 'row ' + (idx + 1) + ' · bar ' + barInRow + '/' + rowBars + ' · chain bar ' + barInChain + '/' + chainTotalBars();
-      if (read) read.textContent = barInChain + ' / ' + chainTotalBars() + ' bars';
+      if (!p.running && !p.clipRunning) return;
+      if (p.running) p.patternTick = (p.patternTick || 0) + 1;
+      if (p.clipRunning) p.clipTick = (p.clipTick || 0) + 1;
+      firePlaylistClips();
 
-      if (idx !== p.rowIndex) {
-        p.rowIndex = idx;
+      const pTotal = chainTotalTicks();
+      const cTotal = clipListTotalTicks();
+      if (p.running && p.rowCount) {
+        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick, 'bars');
+        const rowBars = Math.max(1, (hit.row && hit.row.bars) || 4);
+        const rowTick = p.patternTick - hit.start;
+        const barInRow = Math.floor(rowTick / 96) + 1;
+        const barInList = Math.floor(p.patternTick / 96) + 1;
+        const now = document.getElementById('plNowRead');
+        const read = document.getElementById('chainProgressRead');
+        const barEl = document.getElementById('chainProgressBar');
+        if (now) now.textContent = 'pattern row ' + (hit.i + 1) + ' · bar ' + barInRow + ' of ' + rowBars + ' · list bar ' + barInList + ' of ' + chainTotalBars();
+        if (read) read.textContent = barInList + ' / ' + chainTotalBars() + ' bars';
+        if (barEl) barEl.style.width = (pTotal ? Math.min(100, (p.patternTick / pTotal) * 100) : 0) + '%';
+        if (hit.i !== p.rowIndex) {
+          p.rowIndex = hit.i;
+          p.preloaded = false;
+          enterPlaylistRow(hit.i);
+          preloadNextRow(hit.i);
+          document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
+        }
+        if (!p.preloaded && rowTick >= Math.max(0, (rowBars - 1) * 96)) {
+          preloadNextRow(hit.i);
+          p.preloaded = true;
+        }
+        if (p.patternTick >= pTotal) finishPatternList();
+      }
+      if (p.clipRunning && p.rowCount) {
+        const hit = rowAtLocalTick(p.clipRows, p.rowCount, p.clipTick, 'bars');
+        const rowBars = Math.max(1, (hit.row && hit.row.bars) || 4);
+        const rowTick = p.clipTick - hit.start;
+        const barInRow = Math.floor(rowTick / 96) + 1;
+        const barInList = Math.floor(p.clipTick / 96) + 1;
+        const now = document.getElementById('clNowRead');
+        const read = document.getElementById('clipListProgressRead');
+        const barEl = document.getElementById('clipListProgressBar');
+        if (now) now.textContent = 'clip row ' + (hit.i + 1) + ' · bar ' + barInRow + ' of ' + rowBars + ' · list bar ' + barInList + ' of ' + clipListTotalBars();
+        if (read) read.textContent = barInList + ' / ' + clipListTotalBars() + ' bars';
+        if (barEl) barEl.style.width = (cTotal ? Math.min(100, (p.clipTick / cTotal) * 100) : 0) + '%';
+        if (hit.i !== p.clipIndex) {
+          p.clipIndex = hit.i;
+          document.querySelectorAll('#plRows .pl-row').forEach((r, n) => r.classList.toggle('clip-now', n === hit.i));
+        }
+        if (p.clipTick >= cTotal) finishClipList();
+      }
+    }
+    function finishPatternList() {
+      const p = state.playlist;
+      if (p.playMode === 'loop') {
+        p.patternTick = 0;
+        p.rowIndex = 0;
         p.preloaded = false;
-        enterPlaylistRow(idx);
-        renderPlaylist();
+        enterPlaylistRow(0);
+        preloadNextRow(0);
+        return;
       }
-      const lastBarStart = (rowBars - 1) * 96;
-      if (!p.preloaded && rowTick >= lastBarStart) {
-        preloadNextRow(idx);
-        p.preloaded = true;
+      p.running = false;
+      if (p.playMode === 'halt') {
+        haltPattern();
+        p.clipRunning = false;
+        clockStopDevice();
+        setStatus('Pattern list ended — Halt');
+      } else {
+        setStatus('Pattern list ended');
       }
-      if (t >= total) finishPlaylist();
+      updateChainChrome();
+    }
+    function finishClipList() {
+      const p = state.playlist;
+      const mode = p.clipPlayMode || 'loop';
+      if (mode === 'loop') {
+        p.clipTick = 0;
+        p.clipIndex = 0;
+        return;
+      }
+      p.clipRunning = false;
+      if (mode === 'halt') {
+        haltPattern();
+        p.running = false;
+        clockStopDevice();
+        setStatus('Clip list ended — Halt');
+      } else {
+        setStatus('Clip list ended');
+      }
+      updateChainChrome();
     }
     function enterPlaylistRow(idx) {
       const p = state.playlist;
@@ -4826,31 +5086,36 @@
     }
     function playlistOnPlay(fromStart) {
       const p = state.playlist;
-      if (p.mode !== 'chain' || !p.setChain) return;
-      if (!fromStart && p.running) return;
-      if (!playlistRowsReady()) {
-        setStatus('Set every row to Pattern or Rest');
-        p.running = false;
+      const wantChain = p.mode === 'chain' && p.setChain && p.rowCount > 0;
+      const wantClips = p.rowCount > 0 && p.clipRows.some((r, i) => i < p.rowCount && r && r.name);
+      if (!fromStart && (p.running || p.clipRunning)) return;
+      if (wantChain && !playlistRowsReady()) {
+        setStatus('Every pattern row in the count must be a pattern or a rest');
         return;
       }
-      p.running = true;
-      p.rowIndex = 0;
-      p.preloaded = false;
-      setFollow(false);
-      if (p.clipName && state.clock.clips && state.clock.clips[p.clipName]) {
-        state.clock.clip = state.clock.clips[p.clipName];
-        state.clock.playClip = true;
-        fireClipAtTick(0);
+      if (fromStart) {
+        p.patternTick = 0;
+        p.clipTick = 0;
+        p.rowIndex = 0;
+        p.clipIndex = 0;
+        p.preloaded = false;
       }
-      preloadNextRow(0);
-      const now = document.getElementById('plNowRead');
-      if (now) now.textContent = 'row 1 · chain playing';
+      if (wantChain) {
+        p.running = true;
+        setFollow(false);
+        preloadNextRow(0);
+      }
+      if (wantClips) p.clipRunning = true;
+      firePlaylistClips();
+      updateChainChrome();
     }
     function sendDumpRow(i) {
       const p = state.playlist;
+      if (i == null) i = p.selectedRow || 0;
       const row = p.rows[i];
       if (!row || row.type !== 'pattern' || !row.patternName) { setStatus('Row ' + (i + 1) + ' has no pattern'); return; }
       dumpNameToSlot(row.patternName, row.slot);
+      setStatus('Dumped row ' + (i + 1) + ' to slot ' + row.slot);
     }
     function sendDumpAll() {
       const p = state.playlist;
@@ -4878,13 +5143,20 @@
       p.rows.forEach(r => {
         if (r.patternName && lib[r.patternName]) patterns[r.patternName] = lib[r.patternName];
       });
+      const clips = {};
+      (p.clipRows || []).forEach(r => {
+        if (r && r.name && state.clock.clips && state.clock.clips[r.name]) clips[r.name] = state.clock.clips[r.name];
+      });
       return {
         rowCount: p.rowCount,
         rows: JSON.parse(JSON.stringify(p.rows)),
         slotA: p.slotA,
         slotB: p.slotB,
         playMode: p.playMode,
-        clipName: p.clipName,
+        clipPlayMode: p.clipPlayMode || 'loop',
+        clipCount: p.rowCount || 0,
+        clipRows: JSON.parse(JSON.stringify(p.clipRows || [])),
+        clips: clips,
         patterns: patterns
       };
     }
@@ -4897,7 +5169,15 @@
       p.slotA = snap.slotA || 12;
       p.slotB = snap.slotB || 24;
       p.playMode = snap.playMode || 'loop';
-      p.clipName = snap.clipName || '';
+      p.clipName = '';
+      p.clipCount = snap.clipCount || 0;
+      p.clipRows = snap.clipRows || [];
+      p.clipPlayMode = snap.clipPlayMode || 'loop';
+      if (snap.clips) {
+        state.clock.clips = Object.assign({}, state.clock.clips || {}, snap.clips);
+        if (typeof refreshClipSelect === 'function') refreshClipSelect();
+        else if (typeof writeClockClips === 'function') writeClockClips();
+      }
       p.setChain = false;
       if (snap.patterns) {
         const lib = loadLibrary();
@@ -4914,8 +5194,34 @@
       if (rc) rc.value = String(p.rowCount);
       fillSlotSelect(document.getElementById('plSlotA'), p.slotA);
       fillSlotSelect(document.getElementById('plSlotB'), p.slotB);
-      refreshPlClipSelect();
+      const cc = document.getElementById('plClipCount');
+      if (cc) cc.value = String(p.clipCount || 0);
       renderPlaylist();
+    }
+    function exportPlaylistFile() {
+      const blob = new Blob([JSON.stringify({ kind: 'murf-playlist', list: snapshotPlaylist() }, null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'murf-playlist.json';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      setStatus('Playlist file saved');
+    }
+    function importPlaylistFile(ev) {
+      const file = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          applyPlaylistSnap(data.list || data);
+          setStatus('Loaded playlist file');
+        } catch (err) {
+          setStatus('Could not read that playlist file');
+        }
+      };
+      reader.readAsText(file);
     }
     function refreshPlListSelect() {
       const sel = document.getElementById('plListSelect');
@@ -4931,25 +5237,24 @@
       });
       if (cur && lib[cur]) sel.value = cur;
     }
-    function refreshPlClipSelect() {
-      const sel = document.getElementById('plClipSelect');
+    function fillPlClipCount() {
+      const sel = document.getElementById('plClipCount');
       if (!sel) return;
-      const clips = (state.clock && state.clock.clips) || {};
-      const cur = state.playlist.clipName;
-      sel.innerHTML = '<option value="">— none —</option>';
-      Object.keys(clips).sort().forEach(n => {
-        const o = document.createElement('option');
-        o.value = n;
-        o.textContent = n;
-        sel.appendChild(o);
-      });
-      if (cur && clips[cur]) sel.value = cur;
+      if (!sel.options.length) {
+        for (let i = 0; i <= 16; i++) {
+          const o = document.createElement('option');
+          o.value = i;
+          o.textContent = String(i);
+          sel.appendChild(o);
+        }
+      }
+      sel.value = String(state.playlist.clipCount || 0);
     }
     function initPlaylist() {
       ensurePlRows();
       const rc = document.getElementById('plRowCount');
       if (rc && !rc.options.length) {
-        for (let i = 1; i <= 22; i++) {
+        for (let i = 0; i <= 22; i++) {
           const o = document.createElement('option');
           o.value = i;
           o.textContent = String(i);
@@ -4960,7 +5265,7 @@
       fillSlotSelect(document.getElementById('plSlotA'), state.playlist.slotA);
       fillSlotSelect(document.getElementById('plSlotB'), state.playlist.slotB);
       refreshPlListSelect();
-      refreshPlClipSelect();
+      fillPlClipCount();
       renderPlaylist();
       document.getElementById('btnPlDump')?.addEventListener('click', () => {
         state.playlist.mode = 'dump';
@@ -4974,7 +5279,7 @@
         renderPlaylist();
       });
       document.getElementById('plRowCount')?.addEventListener('change', (e) => {
-        state.playlist.rowCount = Math.max(1, Math.min(22, parseInt(e.target.value, 10) || 1));
+        state.playlist.rowCount = Math.max(0, Math.min(22, parseInt(e.target.value, 10) || 0));
         state.playlist.setChain = false;
         renderPlaylist();
       });
@@ -4988,14 +5293,32 @@
         renderPlaylist();
       });
       document.getElementById('btnSetChain')?.addEventListener('click', setChainNow);
-      document.getElementById('btnPlSendRow')?.addEventListener('click', () => sendDumpRow(0));
+      document.getElementById('btnPlSendRow')?.addEventListener('click', () => sendDumpRow());
       document.getElementById('btnPlSendAll')?.addEventListener('click', sendDumpAll);
       document.getElementById('btnPlLoop')?.addEventListener('click', () => { state.playlist.playMode = 'loop'; updateChainChrome(); });
       document.getElementById('btnPlOnce')?.addEventListener('click', () => { state.playlist.playMode = 'once'; updateChainChrome(); });
       document.getElementById('btnPlHalt')?.addEventListener('click', () => { state.playlist.playMode = 'halt'; updateChainChrome(); });
-      document.getElementById('plClipSelect')?.addEventListener('change', (e) => {
-        state.playlist.clipName = e.target.value;
+      document.getElementById('btnClLoop')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'loop'; updateChainChrome(); });
+      document.getElementById('btnClOnce')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'once'; updateChainChrome(); });
+      document.getElementById('btnClHalt')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'halt'; updateChainChrome(); });
+      document.getElementById('plRows')?.addEventListener('change', (e) => {
+        const el = e.target;
+        const i = parseInt(el.dataset.i, 10);
+        if (isNaN(i)) return;
+        ensurePlRows();
+        if (el.dataset.cl) {
+          const row = state.playlist.clipRows[i];
+          if (!row) return;
+          if (el.dataset.cl === 'name') row.name = el.value;
+          if (el.dataset.cl === 'bars') {
+            row.bars = Math.max(1, Math.min(256, parseInt(el.value, 10) || 4));
+            el.blur();
+          }
+        }
       });
+      document.getElementById('btnPlExportList')?.addEventListener('click', exportPlaylistFile);
+      document.getElementById('btnPlImportList')?.addEventListener('click', () => document.getElementById('plListFile')?.click());
+      document.getElementById('plListFile')?.addEventListener('change', importPlaylistFile);
       document.getElementById('btnPlSaveList')?.addEventListener('click', () => {
         const name = window.prompt('Name this playlist');
         if (!name) return;
@@ -5048,7 +5371,7 @@
       document.querySelectorAll('.tab').forEach(tab => {
         tab.addEventListener('click', () => {
           if (tab.dataset.tab === 'playlist') {
-            refreshPlClipSelect();
+            fillPlClipCount();
             renderPlaylist();
           }
         });
