@@ -1153,6 +1153,7 @@
             <button type="button" id="btnSaveClip">Save take</button>
             <button type="button" id="btnLoadClip">Load</button>
             <button type="button" id="btnDeleteClip">Delete clip</button>
+            <button type="button" id="btnClDeleteAllLib">Delete all from library</button>
             <label>Clip BPM <input id="clipBpmBox" type="number" min="20" max="300" value="120" style="width:56px"></label>
             <label>Length (bars) <input id="clipBarsBox" type="number" min="0" max="64" value="0" style="width:48px" title="0 = free length. Rec punches out after this many bars."></label>
           </div>
@@ -1173,6 +1174,7 @@
             <button type="button" id="btnPlSaveList" data-kbd="⌘S">Save list</button>
             <button type="button" id="btnPlLoadList" data-kbd="⌘O">Load list</button>
             <button type="button" id="btnPlDeleteList" data-kbd="⌘X">Delete list</button>
+            <button type="button" id="btnPlDeleteAllLib">Delete all from library</button>
             <button type="button" id="btnPlExportList">Export list</button>
             <button type="button" id="btnPlImportList">Import list</button>
             <input type="file" id="plListFile" accept=".json,application/json" hidden>
@@ -1209,6 +1211,7 @@
             <div>
               <div class="tgroup clplay" style="margin-bottom:8px">
                 <span class="tlabel">Clip list</span>
+                <button type="button" id="btnClArmed" class="on" title="Bypass keeps clips loaded without firing them">On</button>
                 <label>Rows <select id="plClipCount"></select></label>
                 <button type="button" id="btnClLoop" class="on">Loop</button>
                 <button type="button" id="btnClOnce">Once</button>
@@ -1316,6 +1319,7 @@
         patternTick: 0,
         clipTick: 0,
         clipPlayMode: 'loop',
+        clipArmed: true,
         ping: 'A',
         preloaded: false,
         seqHalted: false
@@ -2390,11 +2394,13 @@
         flashBtn('btnDeleteRow');
         const name = document.getElementById('rowLibrary').value;
         if (!name) { setStatus('Pick a saved row'); return; }
-        const lib = loadRowLib();
-        delete lib[name];
-        writeRowLib(lib);
-        refreshRowSelect();
-        setStatus('Deleted row ' + name);
+        openConfirm('Delete saved row “' + name + '”?', () => {
+          const lib = loadRowLib();
+          delete lib[name];
+          writeRowLib(lib);
+          refreshRowSelect();
+          setStatus('Deleted row ' + name);
+        });
       });
       refreshRowSelect();
 
@@ -3280,11 +3286,13 @@
         flashBtn('btnDeleteLibrary');
         const name = document.getElementById('patternLibrary').value;
         if (!name) { setStatus('Pick a library pattern first'); return; }
-        const lib = loadLibrary();
-        delete lib[name];
-        writeLibrary(lib);
-        refreshLibrarySelect();
-        setStatus('Removed from library: ' + name);
+        openConfirm('Delete library pattern “' + name + '”?', () => {
+          const lib = loadLibrary();
+          delete lib[name];
+          writeLibrary(lib);
+          refreshLibrarySelect();
+          setStatus('Removed from library: ' + name);
+        });
       });
       document.getElementById('btnDeleteAllLibrary').addEventListener('click', () => {
         flashBtn('btnDeleteAllLibrary');
@@ -3394,13 +3402,13 @@
         return [clockSec, resetSec, { box: document.querySelector('#view-stack .panel'), els: ['btnStackReset', 'btnStackPriority', 'btnStackLatch'] }];
       }
       if (tab === 'clock') {
-        return [clockSec, resetSec, { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] }, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'clipBpmBox', 'clipBarsBox', 'btnClipLoop', 'btnClipOnce', 'btnClipHalt'] }];
+        return [clockSec, resetSec, { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] }, { box: document.querySelector('#view-clock .panel'), els: ['btnTapTempo', 'clipSelect', 'btnSaveClip', 'btnLoadClip', 'btnDeleteClip', 'btnClDeleteAllLib', 'clipBpmBox', 'clipBarsBox', 'btnClipLoop', 'btnClipOnce', 'btnClipHalt'] }];
       }
       if (tab === 'playlist') {
         return [
           clockSec, resetSec,
           { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject', 'btnSendState'] },
-          { box: document.querySelector('.tgroup.pllib'), els: ['plListSelect', 'btnPlSaveList', 'btnPlLoadList', 'btnPlDeleteList', 'btnPlExportList', 'btnPlImportList'] },
+          { box: document.querySelector('.tgroup.pllib'), els: ['plListSelect', 'btnPlSaveList', 'btnPlLoadList', 'btnPlDeleteList', 'btnPlDeleteAllLib', 'btnPlExportList', 'btnPlImportList'] },
           { box: document.querySelector('.tgroup.dump'), els: ['btnPlDump', 'btnPlSendRow', 'btnPlSendAll'] },
           { box: document.querySelector('.tgroup.chain'), els: ['btnPlChain', 'btnSetChain', 'btnResetListsPl'] },
           { box: document.querySelector('.tgroup.plplay'), els: ['plRowCount', 'btnPlLoop', 'btnPlOnce', 'btnPlHalt'] },
@@ -3735,7 +3743,6 @@
       sendCC(89, c.armed ? 127 : 0);
       const tog = document.getElementById('togClockSync');
       if (tog) tog.classList.toggle('on', c.armed);
-      recordEvent({ kind: 'cc', cc: 89, val: c.armed ? 127 : 0 });
       updateClockReadout();
     }
     function toggleClockArm() {
@@ -3894,6 +3901,8 @@
       }
       else if (ev.kind === 'cc') {
         sendCC(ev.cc, ev.val);
+        const names = { 85: 'LFO', 86: 'Bass/Mid', 87: 'Bypass', 68: 'Staccato', 89: 'Clock Sync', 9: 'Rate' };
+        if (names[ev.cc]) setStatus('Clip sent ' + names[ev.cc] + ' ' + ev.val);
         if (ev.cc === 9) {
           const i = CLOCK_DIVS.findIndex(d => d.cc === ev.val);
           if (i >= 0) {
@@ -3942,16 +3951,8 @@
       if (c.recArm && !c.recording && !c.playClip) {
         c.recording = true;
         c.take = [];
-        recordEvent({ kind: 'bpm', val: c.bpm });
-        recordEvent({ kind: fromStart ? 'start' : 'cont' });
       }
       if (fromStart) sendRT(0xFA); else sendRT(0xFB);
-      if (c.recording && c.take.length) {
-        const last = c.take[c.take.length - 1];
-        if (!last || (last.kind !== 'start' && last.kind !== 'cont')) {
-          recordEvent({ kind: fromStart ? 'start' : 'cont' });
-        }
-      }
       startTimer();
       updateClockReadout();
       setStatus(fromStart ? 'Play' : 'Continue');
@@ -3982,7 +3983,10 @@
       stopTimer();
       updateClockReadout();
       setStatus('Clock stop');
-      if (state.playlist) state.playlist.running = false;
+      if (state.playlist) {
+        state.playlist.running = false;
+        state.playlist.clipRunning = false;
+      }
     }
     function punchOut() {
       const c = state.clock;
@@ -4113,10 +4117,19 @@
       document.getElementById('btnDeleteClip')?.addEventListener('click', () => {
         const name = document.getElementById('clipSelect').value;
         if (!name) return;
-        delete state.clock.clips[name];
-        writeClockClips();
-        refreshClipSelect();
-        setStatus('Deleted clip ' + name);
+        openConfirm('Delete clip “' + name + '”?', () => {
+          delete state.clock.clips[name];
+          writeClockClips();
+          refreshClipSelect();
+          setStatus('Deleted clip ' + name);
+        });
+      });
+      document.getElementById('btnClDeleteAllLib')?.addEventListener('click', () => {
+        openConfirm('Clear the in-app pattern library? iCloud files will not be deleted.', () => {
+          writeLibrary({});
+          refreshLibrarySelect();
+          setStatus('Library cleared (iCloud files unchanged)');
+        });
       });
 
       function collectProject() {
@@ -5130,6 +5143,15 @@
       document.getElementById('btnClLoop')?.classList.toggle('on', (p.clipPlayMode || 'loop') === 'loop');
       document.getElementById('btnClOnce')?.classList.toggle('on', p.clipPlayMode === 'once');
       document.getElementById('btnClHalt')?.classList.toggle('on', p.clipPlayMode === 'halt');
+      const arm = document.getElementById('btnClArmed');
+      if (arm) {
+        arm.classList.toggle('on', p.clipArmed !== false);
+        arm.textContent = p.clipArmed === false ? 'Bypass' : 'On';
+      }
+      if (p.clipArmed === false) {
+        const cr = document.getElementById('clNowRead');
+        if (cr) cr.textContent = 'clips bypassed';
+      }
       document.getElementById('btnSetChain').disabled = p.mode !== 'chain';
       document.getElementById('btnPlSendAll').disabled = p.mode !== 'dump';
       document.getElementById('btnPlSendRow').disabled = p.mode !== 'dump';
@@ -5146,7 +5168,11 @@
         if (bar) bar.style.width = '0%';
         if (now) now.textContent = p.setChain ? 'chain set — press Play' : 'patterns idle · ' + tot + ' bars';
       }
-      if (!p.clipRunning) {
+      if (p.clipArmed === false) {
+        if (cread) cread.textContent = 'clips bypassed';
+        if (cbar) cbar.style.width = '0%';
+        if (cnow) cnow.textContent = 'clips bypassed';
+      } else if (!p.clipRunning) {
         if (cread) cread.textContent = 'clips ' + ctot + ' bars';
         if (cbar) cbar.style.width = '0%';
         if (cnow) cnow.textContent = 'clips idle · ' + ctot + ' bars';
@@ -5186,7 +5212,7 @@
         }
         if (p.patternTick >= pTotal) finishPatternList();
       }
-      if (p.clipRunning && p.clipCount) {
+      if (p.clipArmed !== false && p.clipRunning && p.clipCount) {
         const hit = rowAtLocalTick(p.clipRows, p.clipCount, p.clipTick, 'bars');
         const rowBars = Math.max(1, (hit.row && hit.row.bars) || 4);
         const rowTick = p.clipTick - hit.start;
@@ -5323,7 +5349,10 @@
           if (firstSlot == null) firstSlot = slot;
         } else if (row.type === 'pattern') {
           const slot = chainSlotForRow(i);
-          if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) return;
+          if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) {
+            dropChain('could not dump ' + (row.patternName || 'row ' + (i + 1)));
+            return;
+          }
           dumped++;
           if (firstSlot == null) firstSlot = slot;
         } else if (firstSlot == null) {
@@ -5338,13 +5367,28 @@
       updateChainChrome();
       setStatus('Chain set — ' + dumped + ' patterns dumped. Row 1 selected. Press Play.');
     }
+    function dropChain(reason) {
+      const p = state.playlist;
+      const was = !!(p.setChain || p.running);
+      p.setChain = false;
+      p.running = false;
+      if (typeof updateChainChrome === 'function') updateChainChrome();
+      setStatus(was ? ('Chain dropped — ' + reason) : reason);
+    }
     function playlistOnPlay(fromStart) {
       const p = state.playlist;
       const wantChain = p.mode === 'chain' && p.setChain && p.rowCount > 0;
-      const wantClips = (p.clipCount || 0) > 0 && p.clipRows.some((r, i) => i < p.clipCount && r && r.name);
-      if (!fromStart && (p.running || p.clipRunning)) return;
+      const wantClips = p.clipArmed !== false && (p.clipCount || 0) > 0 && p.clipRows.some((r, i) => i < p.clipCount && r && r.name);
+      if (p.mode === 'chain' && p.setChain && !p.rowCount) {
+        dropChain('no pattern rows');
+        return;
+      }
       if (wantChain && !playlistRowsReady()) {
-        setStatus('Every pattern row must be Pattern, Rest, EQ Bass, or EQ Mids');
+        dropChain('a pattern row is empty or incomplete');
+        return;
+      }
+      if (p.mode === 'chain' && p.setChain && !state.output) {
+        dropChain('no MIDI port');
         return;
       }
       if (fromStart) {
@@ -5359,6 +5403,7 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
+        if (fromStart) enterPlaylistRow(0);
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
@@ -5410,6 +5455,7 @@
         mode: p.mode || 'dump',
         playMode: p.playMode,
         clipPlayMode: p.clipPlayMode || 'loop',
+        clipArmed: p.clipArmed !== false,
         clipCount: p.clipCount || 0,
         clipRows: JSON.parse(JSON.stringify(p.clipRows || [])),
         clips: clips,
@@ -5430,6 +5476,7 @@
       p.clipCount = snap.clipCount || 0;
       p.clipRows = snap.clipRows || [];
       p.clipPlayMode = snap.clipPlayMode || 'loop';
+      p.clipArmed = snap.clipArmed !== false;
       if (snap.clips) {
         state.clock.clips = Object.assign({}, state.clock.clips || {}, snap.clips);
         if (typeof refreshClipSelect === 'function') refreshClipSelect();
@@ -5522,18 +5569,17 @@
       renderPlaylist();
       document.getElementById('btnPlDump')?.addEventListener('click', () => {
         state.playlist.mode = 'dump';
-        state.playlist.setChain = false;
-        state.playlist.running = false;
+        dropChain('switched to Dump');
         renderPlaylist();
       });
       document.getElementById('btnPlChain')?.addEventListener('click', () => {
         state.playlist.mode = 'chain';
-        state.playlist.setChain = false;
+        dropChain('Chain mode on — press Set chain');
         renderPlaylist();
       });
       document.getElementById('plRowCount')?.addEventListener('change', (e) => {
         state.playlist.rowCount = Math.max(0, Math.min(22, parseInt(e.target.value, 10) || 0));
-        state.playlist.setChain = false;
+        dropChain('pattern row count changed');
         renderPlaylist();
       });
       document.getElementById('plClipCount')?.addEventListener('change', (e) => {
@@ -5548,6 +5594,13 @@
       document.getElementById('btnPlLoop')?.addEventListener('click', () => { state.playlist.playMode = 'loop'; updateChainChrome(); });
       document.getElementById('btnPlOnce')?.addEventListener('click', () => { state.playlist.playMode = 'once'; updateChainChrome(); });
       document.getElementById('btnPlHalt')?.addEventListener('click', () => { state.playlist.playMode = 'halt'; updateChainChrome(); });
+      document.getElementById('btnClArmed')?.addEventListener('click', () => {
+        const p = state.playlist;
+        p.clipArmed = p.clipArmed === false;
+        if (!p.clipArmed) p.clipRunning = false;
+        updateChainChrome();
+        setStatus(p.clipArmed ? 'Clip list on' : 'Clip list bypassed — rows stay loaded');
+      });
       document.getElementById('btnClLoop')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'loop'; updateChainChrome(); });
       document.getElementById('btnClOnce')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'once'; updateChainChrome(); });
       document.getElementById('btnClHalt')?.addEventListener('click', () => { state.playlist.clipPlayMode = 'halt'; updateChainChrome(); });
@@ -5595,11 +5648,20 @@
         const sel = document.getElementById('plListSelect');
         const name = sel && sel.value;
         if (!name) return;
-        const lib = loadListLibrary();
-        delete lib[name];
-        writeListLibrary(lib);
-        refreshPlListSelect();
-        setStatus('Deleted list ' + name);
+        openConfirm('Delete list “' + name + '”?', () => {
+          const lib = loadListLibrary();
+          delete lib[name];
+          writeListLibrary(lib);
+          refreshPlListSelect();
+          setStatus('Deleted list ' + name);
+        });
+      });
+      document.getElementById('btnPlDeleteAllLib')?.addEventListener('click', () => {
+        openConfirm('Clear the in-app pattern library? iCloud files will not be deleted.', () => {
+          writeLibrary({});
+          refreshLibrarySelect();
+          setStatus('Library cleared (iCloud files unchanged)');
+        });
       });
       document.getElementById('plPatRows')?.addEventListener('change', (e) => {
         const el = e.target;
@@ -5618,7 +5680,7 @@
           if (usedDumpSlots(i).has(v)) { setStatus('Slot ' + v + ' already used'); renderPlaylist(); return; }
           row.slot = v;
         }
-        state.playlist.setChain = false;
+        dropChain('pattern list edited');
         renderPlaylist();
       });
       document.querySelectorAll('.tab').forEach(tab => {
