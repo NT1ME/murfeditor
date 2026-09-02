@@ -2206,28 +2206,72 @@
       document.getElementById('btnUndo').addEventListener('click', () => { flashBtn('btnUndo'); undo(); });
       document.getElementById('btnRedo').addEventListener('click', () => { flashBtn('btnRedo'); redo(); });
       document.getElementById('btnCopyBand').addEventListener('click', () => {
-        const src = state.selectedBands.length ? state.selectedBands : [0];
-        state.bandClipboard = src.map(i => ({
-          length: state.pattern.bands[i].length,
-          steps: Array.from(state.pattern.bands[i].steps)
-        }));
-        setStatus('Copied band(s) ' + src.map(i => i + 1).join(', '));
+        flashBtn('btnCopyBand');
+        const src = state.selectedBands.length ? state.selectedBands.slice().sort((a,b) => a-b) : [0];
+        const stepSel = (state.selectedSteps && state.selectedSteps.length)
+          ? state.selectedSteps.slice().sort((a,b) => a-b)
+          : null;
+        if (stepSel) {
+          const origin = stepSel[0];
+          state.bandClipboard = {
+            kind: 'rect',
+            origin: origin,
+            steps: stepSel,
+            rows: src.map(i => ({
+              band: i,
+              on: stepSel.filter(s => state.pattern.bands[i].steps.has(s)).map(s => s - origin)
+            }))
+          };
+          setStatus('Copied ' + src.length + ' band(s) × steps ' + stepSel[0] + '–' + stepSel[stepSel.length - 1]);
+        } else {
+          state.bandClipboard = {
+            kind: 'bands',
+            rows: src.map(i => ({
+              length: state.pattern.bands[i].length,
+              steps: Array.from(state.pattern.bands[i].steps)
+            }))
+          };
+          setStatus('Copied whole band(s) ' + src.map(i => i + 1).join(', '));
+        }
       });
       document.getElementById('btnPasteBand').addEventListener('click', () => {
-        if (!state.bandClipboard || !state.bandClipboard.length) { setStatus('No band copied'); return; }
+        const clip = state.bandClipboard;
+        if (!clip || (clip.kind === 'bands' && !clip.rows) || (clip.kind === 'rect' && !clip.rows) || (Array.isArray(clip) && !clip.length)) {
+          setStatus('Nothing copied');
+          return;
+        }
+        flashBtn('btnPasteBand');
         pushUndo();
-        const dest = state.selectedBands.length ? state.selectedBands : [0];
-        dest.forEach((bandIndex, n) => {
-          const src = state.bandClipboard[n % state.bandClipboard.length];
-          state.pattern.bands[bandIndex] = {
-            length: src.length,
-            steps: new Set(src.steps)
-          };
-        });
+        const dest = state.selectedBands.length ? state.selectedBands.slice().sort((a,b) => a-b) : [0];
+        if (clip.kind === 'rect') {
+          const destOrigin = (state.selectedSteps && state.selectedSteps.length)
+            ? Math.min.apply(null, state.selectedSteps)
+            : (state.focusedStep || clip.origin || 1);
+          dest.forEach((bandIndex, n) => {
+            const row = clip.rows[n % clip.rows.length];
+            const band = state.pattern.bands[bandIndex];
+            row.on.forEach(rel => {
+              const s = destOrigin + rel;
+              if (s < 1 || s > 64) return;
+              if (s > band.length) band.length = s;
+              band.steps.add(s);
+            });
+          });
+          setStatus('Pasted phrase at step ' + destOrigin + ' on band(s) ' + dest.map(i => i + 1).join(', '));
+        } else {
+          const rows = clip.rows || clip;
+          dest.forEach((bandIndex, n) => {
+            const src = rows[n % rows.length];
+            state.pattern.bands[bandIndex] = {
+              length: src.length,
+              steps: new Set(src.steps)
+            };
+          });
+          setStatus('Pasted whole band(s) onto ' + dest.map(i => i + 1).join(', '));
+        }
         buildGrid();
         persistSession();
         maybeAutoSend();
-        setStatus('Pasted onto band(s) ' + dest.map(i => i + 1).join(', '));
       });
       document.getElementById('btnSelectAllBands').addEventListener('click', () => {
         flashBtn('btnSelectAllBands');
