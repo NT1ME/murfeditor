@@ -1532,6 +1532,7 @@
         state.playlist.clipTick = 0;
         state.playlist.rowIndex = 0;
         state.playlist.clipIndex = 0;
+        state.playlist.armedRow = null;
       }
       flashBtn('btnResetAll');
       setStatus('Reset all + notes off');
@@ -5206,11 +5207,6 @@
           p.rowIndex = hit.i;
           p.preloaded = false;
           enterPlaylistRow(hit.i);
-          preloadNextRow(hit.i);
-        }
-        if (!p.preloaded && rowTick >= Math.max(0, (rowBars - 1) * 96)) {
-          preloadNextRow(hit.i);
-          p.preloaded = true;
         }
         if (p.patternTick >= pTotal) finishPatternList();
       }
@@ -5401,6 +5397,7 @@
         p.clipIndex = 0;
         p.preloaded = false;
         p.needStartAfterTs = false;
+        p.armedRow = null;
       }
       if (wantChain) {
         p.running = true;
