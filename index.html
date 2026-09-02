@@ -5360,12 +5360,11 @@
         }
       }
       if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
-      pcToSlot(firstSlot);
       p.setChain = true;
       p.seqHalted = false;
       setFollow(false);
       updateChainChrome();
-      setStatus('Chain set — ' + dumped + ' patterns dumped. Row 1 selected. Press Play.');
+      setStatus('Chain set — ' + dumped + ' patterns dumped. Press Play or Continue.');
     }
     function dropChain(reason) {
       const p = state.playlist;
@@ -5403,7 +5402,8 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        if (fromStart) enterPlaylistRow(0);
+        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
+        enterPlaylistRow(hit ? hit.i : 0);
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
