@@ -833,6 +833,7 @@
           <span class="tlabel">Project</span>
           <button type="button" id="btnSaveProject" data-kbd="⌘⇧S">Save project</button>
           <button type="button" id="btnOpenProject" data-kbd="⌘⇧O">Open project</button>
+          <button type="button" id="btnSendState" title="Send Main + pattern. Skips filter levels. Rate only if clock is not armed.">Send state</button>
           <input type="file" id="projectFile" accept=".json,application/json" hidden>
         </div>
         <div id="clockCluster" class="tgroup">
@@ -1189,7 +1190,7 @@
               <button type="button" id="btnPlChain">Chain</button>
               <button type="button" id="btnSetChain">Set chain</button>
               <button type="button" id="btnResetListsPl" title="Rewind both lists + stop clock / ⌥X" data-kbd="⌥X">Reset lists</button>
-              <span class="hint">Row 1→slot 2 … skip 1 and 13. Pattern / Rest / EQ Bass / EQ Mids. Empty clip rows eat time.</span>
+              <span class="hint">Row 1→slot 2 … skip 1 and 13. Rest is a blank pattern, not Halt. Trigger/Sustain on Rest → next Pattern gets Start.</span>
             </div>
           </div>
           <div class="pl-cols">
@@ -3398,7 +3399,7 @@
       if (tab === 'playlist') {
         return [
           clockSec, resetSec,
-          { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject'] },
+          { box: document.getElementById('projectCluster'), els: ['btnSaveProject', 'btnOpenProject', 'btnSendState'] },
           { box: document.querySelector('.tgroup.pllib'), els: ['plListSelect', 'btnPlSaveList', 'btnPlLoadList', 'btnPlDeleteList', 'btnPlExportList', 'btnPlImportList'] },
           { box: document.querySelector('.tgroup.dump'), els: ['btnPlDump', 'btnPlSendRow', 'btnPlSendAll'] },
           { box: document.querySelector('.tgroup.chain'), els: ['btnPlChain', 'btnSetChain', 'btnResetListsPl'] },
@@ -3885,9 +3886,9 @@
         if (state.output) state.output.send([0x80 | midiChannelByte(), ev.note, 0]);
         lightPerfNote(ev.note, false);
       }
-      else if (ev.kind === 'start') sendRT(0xFA);
-      else if (ev.kind === 'cont') sendRT(0xFB);
-      else if (ev.kind === 'stop') sendRT(0xFC);
+      else if (ev.kind === 'start') { if ((ev.t || 0) !== 0) sendRT(0xFA); }
+      else if (ev.kind === 'cont') { if ((ev.t || 0) !== 0) sendRT(0xFB); }
+      else if (ev.kind === 'stop') { if ((ev.t || 0) !== 0) sendRT(0xFC); }
       else if (ev.kind === 'bpm') {
         applyBpm(ev.val);
       }
@@ -4119,20 +4120,32 @@
       });
 
       function collectProject() {
+        const p = state.playlist || {};
         return {
-          v: 1,
+          v: 2,
           pattern: {
             slot: state.pattern.slot,
             lfo: state.pattern.lfo,
             bands: state.pattern.bands.map(b => ({ length: b.length, steps: [...b.steps] }))
           },
           panel: snapshotPanel(),
+          autoSend: !!state.autoSend,
+          perfMode: state.perfMode,
+          notePriority: !!state.notePriority,
+          latch: !!state.latch,
+          visibleSteps: state.visibleSteps || 64,
           bpm: state.clock.bpm,
           div: state.clock.div,
+          clipMode: state.clock.clipMode || 'loop',
+          clipBars: state.clock.clipBars || 0,
           clips: state.clock.clips,
           clipName: document.getElementById('clipSelect')?.value || '',
           library: JSON.parse(localStorage.getItem('murf-pattern-library') || '{}'),
           rows: JSON.parse(localStorage.getItem('murf-rows') || '{}'),
+          lists: (typeof loadListLibrary === 'function') ? loadListLibrary() : {},
+          playlist: (typeof snapshotPlaylist === 'function') ? snapshotPlaylist() : null,
+          playlistMode: p.mode || 'dump',
+          playlistSetChain: !!p.setChain,
           digits: loadDigitMap(),
           divBank: state.clock.bank || 0,
           customDivs: (state.clock.customDivs || defaultCustomDivs()).slice()
@@ -4166,17 +4179,64 @@
         try {
           if (p.customDivs && p.customDivs.length === 10) state.clock.customDivs = p.customDivs.slice();
           if (p.divBank != null) state.clock.bank = p.divBank;
+          if (p.clipMode) state.clock.clipMode = p.clipMode;
+          if (p.clipBars != null) {
+            state.clock.clipBars = p.clipBars;
+            const bb = document.getElementById('clipBarsBox');
+            if (bb) bb.value = p.clipBars;
+          }
           updateBankLabel();
         } catch (e) { errs.push('divs'); }
+        try {
+          if (p.autoSend != null) {
+            state.autoSend = !!p.autoSend;
+            document.getElementById('btnAutoSend')?.classList.toggle('on', state.autoSend);
+          }
+          if (p.perfMode) state.perfMode = p.perfMode;
+          if (p.notePriority != null) state.notePriority = !!p.notePriority;
+          if (p.latch != null) state.latch = !!p.latch;
+          if (p.visibleSteps) state.visibleSteps = p.visibleSteps;
+        } catch (e) { errs.push('ui'); }
+        try {
+          if (p.lists && typeof writeListLibrary === 'function') writeListLibrary(p.lists);
+          if (p.playlist && typeof applyPlaylistSnap === 'function') applyPlaylistSnap(p.playlist);
+          if (p.playlistMode) state.playlist.mode = p.playlistMode;
+          if (p.playlistSetChain != null) state.playlist.setChain = !!p.playlistSetChain;
+          if (typeof refreshPlListSelect === 'function') refreshPlListSelect();
+          if (typeof renderPlaylist === 'function') renderPlaylist();
+        } catch (e) { errs.push('playlist'); }
         state.clock.running = false; state.clock.recording = false; state.clock.recArm = false; state.clock.armed = false;
+        if (state.playlist) {
+          state.playlist.running = false;
+          state.playlist.clipRunning = false;
+          state.playlist.patternTick = 0;
+          state.playlist.clipTick = 0;
+        }
         stopTimer();
         persistSession();
         buildGrid();
         try { refreshLibrarySelect(); } catch (e) { errs.push('library-list'); }
         try { if (typeof window._refreshRowSelect === 'function') window._refreshRowSelect(); } catch (e) { errs.push('rows-list'); }
         updateClockReadout();
+        if (typeof updateChainChrome === 'function') updateChainChrome();
         setStatus(errs.length ? ('Project loaded with errors: ' + errs.join(', ')) : 'Project loaded — Clock off, nothing sent');
       }
+      function sendAppState() {
+        if (!state.output) { setStatus('Pick a MIDI port first'); return; }
+        const panel = snapshotPanel();
+        const skip = new Set(['20','21','22','23','24','25','26','27','9','channel']);
+        Object.keys(panel).forEach(k => {
+          if (skip.has(k)) return;
+          const n = parseInt(k, 10);
+          if (isNaN(n)) return;
+          sendCC(n, panel[k] | 0);
+        });
+        sendPC((state.pattern.slot | 0) - 1);
+        sendCurrentPattern();
+        flashBtn('btnSendState');
+        setStatus('State sent — Main + pattern. Filter levels and Rate skipped');
+      }
+      document.getElementById('btnSendState')?.addEventListener('click', sendAppState);
       document.getElementById('btnSaveProject')?.addEventListener('click', () => {
         const blob = new Blob([JSON.stringify(collectProject(), null, 2)], { type: 'application/json' });
         const a = document.createElement('a');
@@ -4789,6 +4849,23 @@
       sendSysex(bytes);
       return true;
     }
+    function dumpBlankToSlot(slot) {
+      const nn = Number(slot).toString(16).toUpperCase().padStart(2, '0');
+      let payload = '0081' + nn;
+      const lfoHex = '00';
+      for (let i = 0; i < 8; i++) {
+        payload += '0'.repeat(28) + '08' + lfoHex;
+      }
+      const msg = [0xF0, 0x04, 0x0A, 0x05];
+      for (let i = 0; i < payload.length; i++) msg.push(payload.charCodeAt(i));
+      msg.push(0xF7);
+      sendSysex(new Uint8Array(msg));
+      return true;
+    }
+    function isTrigSustainNote(n) {
+      n = n | 0;
+      return (n >= 48 && n <= 60) || (n >= 72 && n <= 84);
+    }
     function pcToSlot(slot) {
       sendPC((slot | 0) - 1);
     }
@@ -4808,7 +4885,7 @@
     }
     function rowCycleInfo(row) {
       if (!row || row.type === 'rest') {
-        return { ticks: 0, text: 'rest', flag: row ? (row.bars || 4) + ' bars' : '', clean: true };
+        return { ticks: 0, text: 'blank pattern', flag: ((row && row.bars) || 4) + ' bars', clean: true };
       }
       if (row.type === 'eqbass') {
         return { ticks: 0, text: 'EQ Bass · slot 1', flag: (row.bars || 4) + ' bars', clean: true };
@@ -4962,7 +5039,11 @@
       const clip = state.clock.clips && state.clock.clips[hit.row.name];
       if (!clip || !clip.events) return;
       const local = t - hit.start;
-      clip.events.forEach(ev => { if (ev.t === local) playClipEvent(ev); });
+      clip.events.forEach(ev => {
+        if (ev.t !== local) return;
+        if (ev.kind === 'on' && isTrigSustainNote(ev.note)) p.needStartAfterTs = true;
+        playClipEvent(ev);
+      });
     }
     function clipFlag(row) {
       if (!row || !row.name) return { text: 'empty · ' + ((row && row.bars) || 4) + ' bars', cls: '' };
@@ -4998,7 +5079,7 @@
         div.innerHTML =
           '<span class="pl-idx">' + (i + 1) + '</span>' +
           '<div class="pl-pat">' +
-            '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest</option><option value="eqbass">EQ Bass</option><option value="eqmids">EQ Mids</option></select>' +
+            '<select data-pl="type" data-i="' + i + '"><option value="pattern">Pattern</option><option value="rest">Rest (blank)</option><option value="eqbass">EQ Bass</option><option value="eqmids">EQ Mids</option></select>' +
             '<select data-pl="pat" data-i="' + i + '"' + (hidePat ? ' disabled' : '') + '></select>' +
             '<input data-pl="bars" data-i="' + i + '" type="number" min="1" max="256" value="' + (row.bars || 4) + '" title="Pattern bars">' +
             '<select data-pl="slot" data-i="' + i + '"' + (slotDisabled ? ' disabled' : '') + '></select>' +
@@ -5170,30 +5251,25 @@
       if (!row) return null;
       if (row.type === 'eqbass') return 1;
       if (row.type === 'eqmids') return 13;
-      if (row.type === 'pattern') return chainSlotForRow(idx);
+      if (row.type === 'pattern' || row.type === 'rest') return chainSlotForRow(idx);
       return null;
     }
     function enterPlaylistRow(idx) {
       const p = state.playlist;
       const row = p.rows[idx];
       if (!row) return;
-      if (row.type === 'rest') {
-        haltPattern();
-        p.seqHalted = true;
-        setStatus('Rest row ' + (idx + 1));
-        return;
-      }
       const slot = rowDestSlot(idx);
       if (slot == null) { setStatus('Row ' + (idx + 1) + ' needs a type'); return; }
       pcToSlot(slot);
-      if (p.seqHalted) {
+      const needStart = row.type === 'pattern' && p.needStartAfterTs && p.running;
+      if (needStart) {
         sendRT(0xFA);
-        p.seqHalted = false;
+        p.needStartAfterTs = false;
         state.clock.halted = false;
         state.clock.seqStep = 0;
-        setStatus('Chain after rest → slot ' + slot);
+        setStatus('Chain → slot ' + slot + ' + Start (after Trigger/Sustain)');
       } else {
-        setStatus('Chain → slot ' + slot + (row.patternName ? ' · ' + row.patternName : ''));
+        setStatus('Chain → slot ' + slot + (row.type === 'rest' ? ' · blank' : (row.patternName ? ' · ' + row.patternName : '')));
       }
     }
     function preloadNextRow(idx) {
@@ -5239,8 +5315,13 @@
       let firstSlot = null;
       for (let i = 0; i < p.rowCount; i++) {
         const row = p.rows[i];
-        if (!row || row.type === 'rest') continue;
-        if (row.type === 'pattern') {
+        if (!row) continue;
+        if (row.type === 'rest') {
+          const slot = chainSlotForRow(i);
+          dumpBlankToSlot(slot);
+          dumped++;
+          if (firstSlot == null) firstSlot = slot;
+        } else if (row.type === 'pattern') {
           const slot = chainSlotForRow(i);
           if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) return;
           dumped++;
@@ -5272,6 +5353,7 @@
         p.rowIndex = 0;
         p.clipIndex = 0;
         p.preloaded = false;
+        p.needStartAfterTs = false;
       }
       if (wantChain) {
         p.running = true;
@@ -5325,6 +5407,7 @@
         rows: JSON.parse(JSON.stringify(p.rows)),
         slotA: p.slotA,
         slotB: p.slotB,
+        mode: p.mode || 'dump',
         playMode: p.playMode,
         clipPlayMode: p.clipPlayMode || 'loop',
         clipCount: p.clipCount || 0,
@@ -5342,6 +5425,7 @@
       p.slotA = snap.slotA || 12;
       p.slotB = snap.slotB || 24;
       p.playMode = snap.playMode || 'loop';
+      p.mode = snap.mode || p.mode || 'dump';
       p.clipName = '';
       p.clipCount = snap.clipCount || 0;
       p.clipRows = snap.clipRows || [];
