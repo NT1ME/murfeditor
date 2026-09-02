@@ -1020,6 +1020,8 @@
             <button id="btnClearAll">Clear All</button>
             <button id="btnInvert">Invert</button>
             <button id="btnFlip">Flip Channels</button>
+            <button id="btnInvertSel" data-kbd="⌘⇧I">Invert sel</button>
+            <button id="btnFlipSel" data-kbd="⌘⇧F">Flip sel</button>
           </div>
           <div class="tgroup set">
             <span class="tlabel">Set length</span>
@@ -2096,6 +2098,62 @@
         buildGrid();
         maybeAutoSend();
       });
+
+      function selectedBandsList() {
+        const b = (state.selectedBands && state.selectedBands.length) ? state.selectedBands.slice().sort((a,c) => a-c) : [0,1,2,3,4,5,6,7];
+        return b;
+      }
+      function selectedStepsList() {
+        if (state.selectedSteps && state.selectedSteps.length) return state.selectedSteps.slice().sort((a,c) => a-c);
+        let max = 1;
+        selectedBandsList().forEach(i => { max = Math.max(max, state.pattern.bands[i].length || 1); });
+        const out = [];
+        for (let s = 1; s <= max; s++) out.push(s);
+        return out;
+      }
+      function invertSelection() {
+        flashBtn('btnInvertSel');
+        pushUndo();
+        const bands = selectedBandsList();
+        const steps = selectedStepsList();
+        bands.forEach(i => {
+          const band = state.pattern.bands[i];
+          steps.forEach(s => {
+            if (s < 1 || s > 64) return;
+            if (s > band.length) band.length = s;
+            if (band.steps.has(s)) band.steps.delete(s);
+            else band.steps.add(s);
+          });
+        });
+        buildGrid();
+        maybeAutoSend();
+      }
+      function flipSelection() {
+        flashBtn('btnFlipSel');
+        pushUndo();
+        const bands = selectedBandsList();
+        const steps = selectedStepsList();
+        const pairs = Math.floor(bands.length / 2);
+        for (let p = 0; p < pairs; p++) {
+          const a = bands[p];
+          const b = bands[bands.length - 1 - p];
+          steps.forEach(s => {
+            if (s < 1 || s > 64) return;
+            const ba = state.pattern.bands[a];
+            const bb = state.pattern.bands[b];
+            if (s > ba.length) ba.length = s;
+            if (s > bb.length) bb.length = s;
+            const onA = ba.steps.has(s);
+            const onB = bb.steps.has(s);
+            if (onB) ba.steps.add(s); else ba.steps.delete(s);
+            if (onA) bb.steps.add(s); else bb.steps.delete(s);
+          });
+        }
+        buildGrid();
+        maybeAutoSend();
+      }
+      document.getElementById('btnInvertSel')?.addEventListener('click', invertSelection);
+      document.getElementById('btnFlipSel')?.addEventListener('click', flipSelection);
 
       document.querySelectorAll('[data-len]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -3269,7 +3327,7 @@
         return [
           clockSec, resetSec,
           { box: null, els: ['patternSlot', 'patternLfo'] },
-          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnSeqWrite', 'btnFollow', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip'] },
+          { box: document.querySelector('.tgroup.edit'), els: ['btnSendPattern', 'btnAutoSend', 'btnSeqWrite', 'btnFollow', 'btnUndo', 'btnRedo', 'btnClearAll', 'btnInvert', 'btnFlip', 'btnInvertSel', 'btnFlipSel'] },
           { box: document.querySelector('.tgroup.set'), els: () => [document.getElementById('btnSelectAllBands'), document.getElementById('btnClearBandSel'), ...document.querySelectorAll('.tgroup.set [data-len]')] },
           { box: document.querySelector('.tgroup.fit'), els: () => [...document.querySelectorAll('.tgroup.fit [data-fit]')] },
           { box: document.querySelector('.tgroup.zoom'), els: ['btnZoomOut', 'btnZoomIn'] },
@@ -3465,7 +3523,7 @@
       const factory = {
         btnSendPattern: 'P', btnAutoSend: 'A', btnSeqWrite: 'N',
         btnUndo: '⌘Z', btnRedo: '⌘⇧Z',
-        btnClearAll: '⌘X', btnInvert: 'I', btnFlip: 'F',
+        btnClearAll: '⌘X', btnInvert: 'I', btnFlip: 'F', btnInvertSel: '⌘⇧I', btnFlipSel: '⌘⇧F',
         btnCopyPattern: '⌘⇧C', btnPastePattern: '⌘⇧V',
         btnCopyBand: '⌘C', btnPasteBand: '⌘V', btnInitPattern: '⌘I',
         btnSaveLibrary: '⌘S', btnLoadLibrary: '⌘O',
@@ -4353,8 +4411,16 @@
         }
         if ((e.metaKey || e.ctrlKey) && k === 'i') {
           e.preventDefault();
-          document.getElementById('btnInitPattern')?.click();
-          flashBtn('btnInitPattern');
+          if (e.shiftKey) invertSelection();
+          else {
+            document.getElementById('btnInitPattern')?.click();
+            flashBtn('btnInitPattern');
+          }
+          return;
+        }
+        if ((e.metaKey || e.ctrlKey) && k === 'f') {
+          e.preventDefault();
+          if (e.shiftKey) flipSelection();
           return;
         }
         if ((e.metaKey || e.ctrlKey) && k === 'a') {
