@@ -5373,14 +5373,12 @@
       const slot = rowDestSlot(idx);
       if (slot == null) { setStatus('Row ' + (idx + 1) + ' needs a type'); return; }
       pcToSlot(slot);
-      if (p.clipArmed === false) p.needStartAfterTs = false;
-      const needStart = row.type === 'pattern' && p.needStartAfterTs && p.running && p.clipArmed !== false;
-      if (needStart) {
+      p.needStartAfterTs = false;
+      if (p.running && (row.type === 'pattern' || row.type === 'rest' || row.type === 'eqbass' || row.type === 'eqmids')) {
         sendRT(0xFA);
-        p.needStartAfterTs = false;
         state.clock.halted = false;
         state.clock.seqStep = 0;
-        setStatus('Chain → slot ' + slot + ' + Start (after Trigger/Sustain)');
+        setStatus('Chain → slot ' + slot + ' + Start' + (row.patternName ? ' · ' + row.patternName : ''));
       } else {
         setStatus('Chain → slot ' + slot + (row.type === 'rest' ? ' · blank' : (row.patternName ? ' · ' + row.patternName : '')));
       }
