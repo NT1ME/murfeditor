@@ -56,28 +56,23 @@
 
     /* Header */
     header {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      grid-template-rows: auto auto;
-      column-gap: 16px;
-      row-gap: 6px;
-      align-items: start;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
       padding: 6px 10px;
       background: var(--panel);
       border-bottom: 1px solid var(--border);
       flex-shrink: 0;
     }
     header h1 {
-      grid-column: 1;
-      grid-row: 1 / span 2;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.6px;
       color: var(--accent);
-      padding-right: 10px;
-      line-height: 1.25;
-      align-self: center;
-      max-width: 132px;
+      padding-right: 8px;
+      line-height: 1.2;
+      white-space: nowrap;
+      margin: 0;
     }
     header h1 small {
       display: block;
@@ -88,18 +83,16 @@
       margin-top: 3px;
     }
     .hdr-tools {
-      grid-column: 2;
-      grid-row: 1;
       display: flex;
-      flex-wrap: nowrap;
-      gap: 8px 12px;
+      flex-wrap: wrap;
+      gap: 6px 8px;
       align-items: flex-start;
       min-width: 0;
     }
-    #clockCluster { min-width: 0; flex: 1; }
+    #midiCluster { flex: 0 0 auto; }
+    #projectCluster { flex: 0 0 auto; }
+    #clockCluster { min-width: 0; flex: 1 1 420px; }
     .hdr-trans {
-      grid-column: 2;
-      grid-row: 2;
       display: flex;
       flex-wrap: wrap;
       gap: 6px;
@@ -808,7 +801,6 @@
 <body>
   <div id="app">
     <header>
-      <h1>MF-105M<small>Virtual Controller</small></h1>
       <div class="hdr-tools">
         <div class="midi-cluster tgroup" id="midiCluster">
           <span class="tlabel">MIDI</span>
@@ -886,6 +878,7 @@
         </div>
       </div>
       <div class="hdr-trans" id="resetCluster">
+        <h1>MF-105M<small>Virtual Controller</small></h1>
         <button id="btnGlobalPatternReset" title="CC90 / Z" data-kbd="Z">Pat Reset</button>
         <button id="btnHaltPattern" title="CC20 halt / Shift+X" data-kbd="⇧X">Halt</button>
         <button id="btnStopPattern" title="Note 108 / X" data-kbd="X">Step</button>
@@ -3969,17 +3962,8 @@
     }
     function clockPlay(fromStart) {
       const c = state.clock;
-      const already = !!c.running;
       armClockOn();
       c.running = true;
-      if (already) {
-        c.halted = false;
-        startTimer();
-        updateClockReadout();
-        setStatus(fromStart ? 'Play — latched to running clock' : 'Continue — latched to running clock');
-        if (typeof playlistOnPlay === 'function') playlistOnPlay(false);
-        return;
-      }
       if (fromStart) { c.tick = 0; c.seqStep = 0; c.halted = false; }
       else c.halted = false;
       if (c.recArm && !c.recording && !c.playClip) {
@@ -5367,8 +5351,6 @@
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
-      const clockWasRunning = !!(state.clock && state.clock.running);
-      if (clockWasRunning) stopTimer();
       let dumped = 0;
       let firstSlot = null;
       for (let i = 0; i < p.rowCount; i++) {
@@ -5382,7 +5364,6 @@
         } else if (row.type === 'pattern') {
           const slot = chainSlotForRow(i);
           if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) {
-            if (clockWasRunning) startTimer();
             dropChain('could not dump ' + (row.patternName || 'row ' + (i + 1)));
             return;
           }
@@ -5395,14 +5376,10 @@
       if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
       p.setChain = true;
       p.seqHalted = false;
-      p.primedSlot = firstSlot;
-      if (firstSlot != null) pcToSlot(firstSlot);
+      p.primedSlot = null;
       setFollow(false);
-      if (clockWasRunning) startTimer();
       updateChainChrome();
-      setStatus(clockWasRunning
-        ? ('Chain set — slot ' + firstSlot + ' primed. Press Play to latch (no second Start).')
-        : ('Chain set — slot ' + firstSlot + ' primed. Press Play or Continue.'));
+      setStatus('Chain set — ' + dumped + ' patterns dumped. Press Play or Continue.');
     }
     function dropChain(reason) {
       const p = state.playlist;
@@ -5443,15 +5420,7 @@
         p.seqHalted = false;
         setFollow(false);
         const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-        const idx = hit ? hit.i : 0;
-        const slot = rowDestSlot(idx);
-        if (p.primedSlot != null && slot === p.primedSlot) {
-          p.primedSlot = null;
-          setStatus('Chain latched · slot ' + slot);
-        } else {
-          p.primedSlot = null;
-          enterPlaylistRow(idx);
-        }
+        enterPlaylistRow(hit ? hit.i : 0);
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
