@@ -1490,6 +1490,12 @@
     function selectPort(id) {
       if (!state.midiAccess) return;
       state.output = id ? state.midiAccess.outputs.get(id) : null;
+      if (id && state.monitor && state.output && state.monitor.id === state.output.id) {
+        state.monitor = null;
+        const mon = document.getElementById('midiMonitor');
+        if (mon) mon.value = '';
+        setStatus('Also cleared — same port as Main');
+      }
       updateMidiLed();
       document.getElementById('midiLabel').textContent =
         state.output ? 'MIDI: ' + state.output.name : 'MIDI: disconnected';
@@ -1498,8 +1504,9 @@
     }
     function selectMonitor(id) {
       if (!state.midiAccess) return;
-      if (id && state.output && id === (document.getElementById('midiPort') && document.getElementById('midiPort').value)) {
-        setStatus('Monitor must be a different port than the MuRF');
+      const mainId = state.output && state.output.id;
+      if (id && mainId && id === mainId) {
+        setStatus('Also cannot be the same port as Main');
         const mon = document.getElementById('midiMonitor');
         if (mon) mon.value = '';
         state.monitor = null;
@@ -1665,7 +1672,6 @@
       state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
     }
     function midiPanic() {
-      sendCC(123, 0);
       try {
         if (typeof perfHeld !== 'undefined') perfHeld.clear();
         if (typeof perfLatched !== 'undefined') perfLatched.clear();
