@@ -4982,7 +4982,7 @@
       msg.push(0xF7);
       return new Uint8Array(msg);
     }
-    const DUMP_GAP_MS = 80;
+    const DUMP_GAP_MS = 200;
     let dumpQueueBusy = false;
     function sendSysexSpaced(list, afterFn) {
       const jobs = (list || []).filter(Boolean);
