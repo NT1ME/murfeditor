@@ -4008,10 +4008,15 @@
           clockTick();
         }
         if (c.f8Sent == null) c.f8Sent = 0;
-        let f8Guard = 0;
-        while (c.f8Sent < due && f8Guard++ < 96) {
-          sendClockAt(c.origin + c.f8Sent * tickMs);
-          c.f8Sent++;
+        if (due - c.f8Sent > 8) {
+          // A real stall (tab backgrounded, screen locked, etc.) - don't
+          // blast the backlog at the device as a burst, just resync.
+          c.f8Sent = due;
+        } else {
+          while (c.f8Sent < due) {
+            sendClockAt(c.origin + c.f8Sent * tickMs);
+            c.f8Sent++;
+          }
         }
         c.raf = requestAnimationFrame(loop);
       };
