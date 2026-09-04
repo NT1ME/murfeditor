@@ -4966,6 +4966,36 @@
       sendSysex(new Uint8Array(msg));
       return true;
     }
+    function blankDumpBytes(slot) {
+      const nn = Number(slot).toString(16).toUpperCase().padStart(2, '0');
+      let payload = '0081' + nn;
+      const lfoHex = '00';
+      for (let i = 0; i < 8; i++) payload += '0'.repeat(28) + '08' + lfoHex;
+      const msg = [0xF0, 0x04, 0x0A, 0x05];
+      for (let i = 0; i < payload.length; i++) msg.push(payload.charCodeAt(i));
+      msg.push(0xF7);
+      return new Uint8Array(msg);
+    }
+    const DUMP_GAP_MS = 80;
+    let dumpQueueBusy = false;
+    function sendSysexSpaced(list, afterFn) {
+      const jobs = (list || []).filter(Boolean);
+      if (!jobs.length) { if (afterFn) afterFn(); return; }
+      dumpQueueBusy = true;
+      let i = 0;
+      const step = () => {
+        if (i < jobs.length) {
+          sendSysex(jobs[i++]);
+          setTimeout(step, DUMP_GAP_MS);
+          return;
+        }
+        setTimeout(() => {
+          dumpQueueBusy = false;
+          if (afterFn) afterFn();
+        }, DUMP_GAP_MS);
+      };
+      step();
+    }
     function isTrigSustainNote(n) {
       n = n | 0;
       return (n >= 48 && n <= 60) || (n >= 72 && n <= 84);
@@ -5419,6 +5449,7 @@
     }
     function setChainNow() {
       const p = state.playlist;
+      if (dumpQueueBusy) { setStatus('Dumps still sending — wait'); return; }
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
@@ -5426,40 +5457,43 @@
         state.clock.running = false;
         stopTimer();
       }
-      let dumped = 0;
+      const jobs = [];
       let firstSlot = null;
       for (let i = 0; i < p.rowCount; i++) {
         const row = p.rows[i];
         if (!row) continue;
         if (row.type === 'rest') {
           const slot = chainSlotForRow(i);
-          dumpBlankToSlot(slot);
-          dumped++;
+          jobs.push(blankDumpBytes(slot));
           if (firstSlot == null) firstSlot = slot;
         } else if (row.type === 'pattern') {
           const slot = chainSlotForRow(i);
-          if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) {
+          const bytes = row.patternName ? sysexForName(row.patternName, slot) : null;
+          if (!bytes) {
             dropChain('could not dump ' + (row.patternName || 'row ' + (i + 1)));
             return;
           }
-          dumped++;
+          jobs.push(bytes);
           if (firstSlot == null) firstSlot = slot;
         } else if (firstSlot == null) {
           firstSlot = rowDestSlot(i);
         }
       }
       if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
-      p.setChain = true;
-      p.seqHalted = false;
-      p.primedSlot = firstSlot;
-      p.rowIndex = 0;
-      p.patternTick = 0;
-      if (firstSlot != null) pcToSlot(firstSlot);
-      sendRT(0xFC);
-      sendCC(90, 127);
-      setFollow(false);
-      updateChainChrome();
-      setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
+      setStatus('Sending ' + jobs.length + ' dump' + (jobs.length === 1 ? '' : 's') + '…');
+      sendSysexSpaced(jobs, () => {
+        p.setChain = true;
+        p.seqHalted = false;
+        p.primedSlot = firstSlot;
+        p.rowIndex = 0;
+        p.patternTick = 0;
+        pcToSlot(firstSlot);
+        sendRT(0xFC);
+        sendCC(90, 127);
+        setFollow(false);
+        updateChainChrome();
+        setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
+      });
     }
     function dropChain(reason) {
       const p = state.playlist;
@@ -5518,22 +5552,23 @@
     }
     function sendDumpAll() {
       const p = state.playlist;
+      if (dumpQueueBusy) { setStatus('Dumps still sending — wait'); return; }
       const seen = new Set();
+      const jobs = [];
       for (let i = 0; i < p.rowCount; i++) {
         const r = p.rows[i];
         if (!r || r.type !== 'pattern' || !r.patternName) continue;
         if (seen.has(+r.slot)) { setStatus('Duplicate slot ' + r.slot); return; }
         seen.add(+r.slot);
+        const bytes = sysexForName(r.patternName, r.slot);
+        if (!bytes) { setStatus('No pattern: ' + r.patternName); return; }
+        jobs.push(bytes);
       }
-      let n = 0;
-      for (let i = 0; i < p.rowCount; i++) {
-        const r = p.rows[i];
-        if (r && r.type === 'pattern' && r.patternName) {
-          dumpNameToSlot(r.patternName, r.slot);
-          n++;
-        }
-      }
-      setStatus('Dumped ' + n + ' pattern' + (n === 1 ? '' : 's'));
+      if (!jobs.length) { setStatus('Nothing to dump'); return; }
+      setStatus('Sending ' + jobs.length + ' dump' + (jobs.length === 1 ? '' : 's') + '…');
+      sendSysexSpaced(jobs, () => {
+        setStatus('Dumped ' + jobs.length + ' pattern' + (jobs.length === 1 ? '' : 's'));
+      });
     }
     function snapshotPlaylist() {
       const p = state.playlist;
