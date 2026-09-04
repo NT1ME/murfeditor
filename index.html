@@ -810,6 +810,14 @@
             <option value="">Select port…</option>
           </select>
           <button id="btnRefreshMidi" title="Refresh MIDI ports">↻</button>
+          <label class="clock-mini">Also
+            <select id="midiMonitor" style="max-width:140px" title="Second port for Protokol / IAC. Same messages as the MuRF port.">
+              <option value="">— monitor —</option>
+            </select>
+          </label>
+          <label class="clock-mini" title="Send clock pulses to the monitor port. Leave off so Protokol can save the dump.">
+            <input type="checkbox" id="monitorClock"> clk
+          </label>
           <label class="clock-mini">Ch
             <select id="midiChannel">
               <option value="1" selected>1</option>
@@ -1280,6 +1288,8 @@
     const state = {
       midiAccess: null,
       output: null,
+      monitor: null,
+      monitorClock: false,
       channel: 1,
       ccs: {}, // 1-16
       autoSend: false,
@@ -1457,10 +1467,9 @@
       }
     }
 
-    function refreshPorts() {
-      const sel = document.getElementById('midiPort');
-      const current = sel.value;
-      sel.innerHTML = '<option value="">Select port…</option>';
+    function fillPortSelect(sel, current, emptyLabel) {
+      if (!sel) return;
+      sel.innerHTML = '<option value="">' + emptyLabel + '</option>';
       if (!state.midiAccess) return;
       for (const out of state.midiAccess.outputs.values()) {
         const opt = document.createElement('option');
@@ -1469,6 +1478,12 @@
         sel.appendChild(opt);
       }
       if (current) sel.value = current;
+    }
+    function refreshPorts() {
+      const sel = document.getElementById('midiPort');
+      const mon = document.getElementById('midiMonitor');
+      fillPortSelect(sel, sel && sel.value, 'Select port…');
+      fillPortSelect(mon, mon && mon.value, '— monitor —');
       updateMidiLed();
     }
 
@@ -1478,7 +1493,20 @@
       updateMidiLed();
       document.getElementById('midiLabel').textContent =
         state.output ? 'MIDI: ' + state.output.name : 'MIDI: disconnected';
-      setStatus(state.output ? 'Connected: ' + state.output.name : 'No port selected');
+      const extra = state.monitor ? ' + ' + state.monitor.name : '';
+      setStatus(state.output ? ('Connected: ' + state.output.name + extra) : 'No port selected');
+    }
+    function selectMonitor(id) {
+      if (!state.midiAccess) return;
+      if (id && state.output && id === (document.getElementById('midiPort') && document.getElementById('midiPort').value)) {
+        setStatus('Monitor must be a different port than the MuRF');
+        const mon = document.getElementById('midiMonitor');
+        if (mon) mon.value = '';
+        state.monitor = null;
+        return;
+      }
+      state.monitor = id ? state.midiAccess.outputs.get(id) : null;
+      setStatus(state.monitor ? ('Monitor: ' + state.monitor.name) : 'Monitor off');
     }
 
     function updateMidiLed() {
@@ -1493,15 +1521,18 @@
     }
 
     function midiSend(bytes) {
-      if (!state.output) return false;
-      try {
-        state.output.send(bytes);
-        flashMidi();
-        return true;
-      } catch (e) {
-        setStatus('MIDI port stalled — pick the port again');
-        return false;
+      if (!state.output && !state.monitor) return false;
+      let ok = false;
+      if (state.output) {
+        try { state.output.send(bytes); ok = true; } catch (e) {
+          setStatus('MIDI port stalled — pick the port again');
+        }
       }
+      if (state.monitor) {
+        try { state.monitor.send(bytes); ok = true; } catch (e) {}
+      }
+      if (ok) flashMidi();
+      return ok;
     }
     function sendCC(cc, value) {
       if (state.clock && state.clock.recording && (cc === 90)) recordEvent({ kind: 'cc', cc: 90, val: value | 0 });
@@ -3700,7 +3731,7 @@
       c.take.push(ev);
     }
     function sendRT(b) {
-      if (state.output) { try { state.output.send([b]); flashMidi(); } catch (e) {} }
+      midiSend([b]);
     }
     function longestBand() {
       return Math.max(...state.pattern.bands.map(b => b.length || 1));
@@ -3877,8 +3908,11 @@
       }
       const led = document.getElementById('beatLed');
       if (led) led.classList.toggle('on', c.running && (c.tick % 24) < 2);
-      if (c.armed && state.output) {
-        try { state.output.send([0xF8]); } catch (e) {}
+      if (c.armed) {
+        if (state.output) { try { state.output.send([0xF8]); } catch (e) {} }
+        if (state.monitor && state.monitorClock) {
+          try { state.monitor.send([0xF8]); } catch (e) {}
+        }
       }
       if (c.playClip && c.clip) {
         fireClipAtTick(c.tick);
@@ -5760,6 +5794,13 @@
       document.getElementById('midiPort').addEventListener('change', (e) => {
         selectPort(e.target.value);
         persistSession();
+      });
+      document.getElementById('midiMonitor')?.addEventListener('change', (e) => {
+        selectMonitor(e.target.value);
+      });
+      document.getElementById('monitorClock')?.addEventListener('change', (e) => {
+        state.monitorClock = !!e.target.checked;
+        setStatus(state.monitorClock ? 'Monitor includes clock' : 'Monitor skips clock pulses');
       });
       document.getElementById('btnRefreshMidi').addEventListener('click', refreshPorts);
 
