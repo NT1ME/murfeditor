@@ -1552,20 +1552,11 @@
     }
 
 
-    function currentF1() {
-      const el = document.querySelector('[data-cc="20"]');
-      if (el && el.tagName === 'INPUT') {
-        const n = parseInt(el.value, 10);
-        if (!isNaN(n)) return n & 0x7F;
-      }
-      if (state.ccs && state.ccs['20'] != null) return state.ccs['20'] & 0x7F;
-      return 0;
-    }
     function haltPattern() {
       state.clock.halted = true;
-      sendCC(20, currentF1());
+      sendCC(20, 0);
       flashBtn('btnHaltPattern');
-      setStatus('Halt (CC20 @ ' + currentF1() + ')');
+      setStatus('Halt (CC20 @ 0)');
       updatePlayheads();
     }
     function pauseAll() {
