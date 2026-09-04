@@ -254,6 +254,16 @@
       flex-shrink: 0;
     }
     #gridHint .hint-seq { opacity: 0.9; }
+    .hint-cap {
+      display: none;
+      font-size: 9px;
+      opacity: 0.65;
+      letter-spacing: 0.03em;
+      line-height: 1.3;
+      white-space: nowrap;
+    }
+    body.show-hints .hint-cap { display: block; }
+    .clock-stack { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; }
     .hdr-meter {
       display: flex;
       align-items: center;
@@ -847,8 +857,14 @@
             <button id="btnRecord" title="\">Rec</button>
             <button id="btnPlayClip" title="Play clip / ⌘⇧Enter" data-kbd="⌘⇧↵">Play clip</button>
             <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
-            <select id="divSelect" title="Clock division (CC9) — ⌘, ⌘.  Banks: ⌘B  Slots: ⌘1–0"></select>
-            <span id="divBankLabel" class="clock-mini" title="⌘B cycles banks">Straight</span>
+            <span class="clock-stack">
+              <select id="divSelect" title="Clock division (CC9)"></select>
+              <span class="hint-cap">⌘, and ⌘. walk the full list</span>
+            </span>
+            <span class="clock-stack">
+              <span id="divBankLabel" class="clock-mini" title="⌘B cycles banks">Straight</span>
+              <span class="hint-cap">⌘B next bank</span>
+            </span>
             <div id="beatLed" title="Quarter pulse"></div>
           </div>
           <div id="clockRow2">
@@ -866,6 +882,7 @@
               <span class="hdr-meter-read" id="clipListProgressRead">clips —</span>
             </div>
           </div>
+          <div class="hint-cap" id="clockBankSlotsHint">⌘1–0 picks a division in the current bank. Map on, then ⌘1–0 stores that division on the Custom bank.</div>
         </div>
       </div>
       <div class="hdr-trans" id="resetCluster">
@@ -1043,6 +1060,9 @@
           </div>
           <div class="hint-row hint-seq">
             <span>Seq write N</span><i></i><span>Stamp Q W E R T Y H J</span><i></i><span>Space next</span>
+          </div>
+          <div class="hint-row">
+            <span>Div bank ⌘B</span><i></i><span>Div slot ⌘1–0</span><i></i><span>Div list ⌘, ⌘.</span><i></i><span>Map + ⌘1–0 writes Custom</span>
           </div>
         </div>
 
@@ -1479,19 +1499,25 @@
       setTimeout(() => led.classList.remove('flash'), 120);
     }
 
+    function midiSend(bytes) {
+      if (!state.output) return false;
+      try {
+        state.output.send(bytes);
+        flashMidi();
+        return true;
+      } catch (e) {
+        setStatus('MIDI port stalled — pick the port again');
+        return false;
+      }
+    }
     function sendCC(cc, value) {
       if (state.clock && state.clock.recording && (cc === 90)) recordEvent({ kind: 'cc', cc: 90, val: value | 0 });
-      if (!state.output) return;
       const v = Math.max(0, Math.min(127, value | 0));
-      state.output.send([0xB0 | midiChannelByte(), cc & 0x7F, v]);
-      flashMidi();
+      midiSend([0xB0 | midiChannelByte(), cc & 0x7F, v]);
     }
 
     function sendPC(program) {
-      if (!state.output) return;
-      // program 0-23 for patterns 1-24
-      state.output.send([0xC0 | midiChannelByte(), program & 0x7F]);
-      flashMidi();
+      midiSend([0xC0 | midiChannelByte(), program & 0x7F]);
     }
 
 
@@ -1629,9 +1655,7 @@
         setStatus('No MIDI port selected');
         return;
       }
-      state.output.send(bytes);
-      flashMidi();
-      setStatus('SysEx sent (' + bytes.length + ' bytes)');
+      if (midiSend(bytes)) setStatus('SysEx sent (' + bytes.length + ' bytes)');
     }
 
     // ---------- SysEx Pattern Generator (proven format) ----------
@@ -3945,8 +3969,17 @@
     }
     function clockPlay(fromStart) {
       const c = state.clock;
+      const already = !!c.running;
       armClockOn();
       c.running = true;
+      if (already) {
+        c.halted = false;
+        startTimer();
+        updateClockReadout();
+        setStatus(fromStart ? 'Play — latched to running clock' : 'Continue — latched to running clock');
+        if (typeof playlistOnPlay === 'function') playlistOnPlay(false);
+        return;
+      }
       if (fromStart) { c.tick = 0; c.seqStep = 0; c.halted = false; }
       else c.halted = false;
       if (c.recArm && !c.recording && !c.playClip) {
@@ -5334,6 +5367,8 @@
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
+      const clockWasRunning = !!(state.clock && state.clock.running);
+      if (clockWasRunning) stopTimer();
       let dumped = 0;
       let firstSlot = null;
       for (let i = 0; i < p.rowCount; i++) {
@@ -5347,6 +5382,7 @@
         } else if (row.type === 'pattern') {
           const slot = chainSlotForRow(i);
           if (!row.patternName || !dumpNameToSlot(row.patternName, slot)) {
+            if (clockWasRunning) startTimer();
             dropChain('could not dump ' + (row.patternName || 'row ' + (i + 1)));
             return;
           }
@@ -5359,15 +5395,21 @@
       if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
       p.setChain = true;
       p.seqHalted = false;
+      p.primedSlot = firstSlot;
+      if (firstSlot != null) pcToSlot(firstSlot);
       setFollow(false);
+      if (clockWasRunning) startTimer();
       updateChainChrome();
-      setStatus('Chain set — ' + dumped + ' patterns dumped. Press Play or Continue.');
+      setStatus(clockWasRunning
+        ? ('Chain set — slot ' + firstSlot + ' primed. Press Play to latch (no second Start).')
+        : ('Chain set — slot ' + firstSlot + ' primed. Press Play or Continue.'));
     }
     function dropChain(reason) {
       const p = state.playlist;
       const was = !!(p.setChain || p.running);
       p.setChain = false;
       p.running = false;
+      p.primedSlot = null;
       if (typeof updateChainChrome === 'function') updateChainChrome();
       setStatus(was ? ('Chain dropped — ' + reason) : reason);
     }
@@ -5401,7 +5443,15 @@
         p.seqHalted = false;
         setFollow(false);
         const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-        enterPlaylistRow(hit ? hit.i : 0);
+        const idx = hit ? hit.i : 0;
+        const slot = rowDestSlot(idx);
+        if (p.primedSlot != null && slot === p.primedSlot) {
+          p.primedSlot = null;
+          setStatus('Chain latched · slot ' + slot);
+        } else {
+          p.primedSlot = null;
+          enterPlaylistRow(idx);
+        }
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
