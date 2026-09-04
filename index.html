@@ -1554,11 +1554,18 @@
       if (state.ccs && state.ccs['20'] != null) return state.ccs['20'] & 0x7F;
       return 0;
     }
-    function haltPattern() {
+    function haltValue() {
+      const v = currentF1();
+      return v > 0 ? v : 64;
+    }
+    function sendHalt() {
       state.clock.halted = true;
-      sendCC(20, currentF1());
+      sendCC(20, haltValue());
+    }
+    function haltPattern() {
+      sendHalt();
       flashBtn('btnHaltPattern');
-      setStatus('Halt (CC20 @ ' + currentF1() + ')');
+      setStatus('Halt (CC20 @ ' + haltValue() + ')');
       updatePlayheads();
     }
     function pauseAll() {
@@ -1583,6 +1590,10 @@
         state.playlist.rowIndex = 0;
         state.playlist.clipIndex = 0;
         state.playlist.armedRow = null;
+        if (state.playlist.setChain && state.playlist.rowCount) {
+          const slot = (typeof rowDestSlot === 'function') ? rowDestSlot(0) : null;
+          if (slot != null) pcToSlot(slot);
+        }
       }
       flashBtn('btnResetAll');
       setStatus('Reset all + notes off');
@@ -1674,12 +1685,19 @@
       document.querySelectorAll('#keyboard .key.active, #view-stack .key.active').forEach(el => el.classList.remove('active'));
     }
 
+    function trimSysex(bytes) {
+      const a = bytes instanceof Uint8Array ? Array.from(bytes) : Array.from(bytes || []);
+      const start = a.indexOf(0xF0);
+      const end = a.indexOf(0xF7, start >= 0 ? start : 0);
+      if (start >= 0 && end > start) return new Uint8Array(a.slice(start, end + 1));
+      return bytes instanceof Uint8Array ? bytes : new Uint8Array(a);
+    }
     function sendSysex(bytes) {
-      if (!state.output) {
+      if (!state.output && !state.monitor) {
         setStatus('No MIDI port selected');
         return;
       }
-      if (midiSend(bytes)) setStatus('SysEx sent (' + bytes.length + ' bytes)');
+      if (midiSend(trimSysex(bytes))) setStatus('SysEx sent');
     }
 
     // ---------- SysEx Pattern Generator (proven format) ----------
@@ -5414,10 +5432,13 @@
       p.seqHalted = false;
       p.primedSlot = firstSlot;
       p.rowIndex = 0;
+      p.patternTick = 0;
       if (firstSlot != null) pcToSlot(firstSlot);
+      sendHalt();
+      sendCC(90, 127);
       setFollow(false);
       updateChainChrome();
-      setStatus('Chain set — ' + dumped + ' dumped, slot ' + firstSlot + ' selected. Press Play (Start only).');
+      setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
     }
     function dropChain(reason) {
       const p = state.playlist;
