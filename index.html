@@ -3818,7 +3818,14 @@
       if (box) box.value = next;
       const clipBpm = document.getElementById('clipBpmBox');
       if (clipBpm && !state.clock.clip) clipBpm.value = next;
-      if (state.clock.running) startTimer();
+      if (state.clock.running) {
+        const c = state.clock;
+        if (c.origin != null) {
+          const tickMs = 60000 / Math.max(20, next) / 24;
+          c.origin = performance.now() - (c.tick || 0) * tickMs;
+        }
+        startTimer();
+      }
       recordEvent({ kind: 'bpm', val: next });
       updateClockReadout();
       setStatus('BPM ' + next);
@@ -3904,7 +3911,6 @@
     function clockTick() {
       const c = state.clock;
       if (!c.running) return;
-      c.tick++;
       if (!c.halted) {
         const tps = ticksPerStep();
         if (tps && c.tick % tps === 0) {
@@ -3914,12 +3920,6 @@
       }
       const led = document.getElementById('beatLed');
       if (led) led.classList.toggle('on', c.running && (c.tick % 24) < 2);
-      if (c.armed) {
-        if (state.output) { try { state.output.send([0xF8]); } catch (e) {} }
-        if (state.monitor && state.monitorClock) {
-          try { state.monitor.send([0xF8]); } catch (e) {}
-        }
-      }
       if (c.playClip && c.clip) {
         fireClipAtTick(c.tick);
         const len = clipDurationTicks(c.clip);
@@ -3979,19 +3979,34 @@
         if (ev.cc === 89) state.clock.armed = ev.val >= 64;
       }
     }
+    function sendOneClock() {
+      if (!state.clock.armed) return;
+      if (state.output) { try { state.output.send([0xF8]); } catch (e) {} }
+      if (state.monitor && state.monitorClock) {
+        try { state.monitor.send([0xF8]); } catch (e) {}
+      }
+    }
     function startTimer() {
       stopTimer();
       const c = state.clock;
-      c.nextTick = performance.now();
+      if (c.origin == null) {
+        c.origin = performance.now();
+        c.f8Sent = c.tick || 0;
+      }
       const loop = (now) => {
         if (!c.running) return;
         const tickMs = 60000 / Math.max(20, c.bpm) / 24;
+        const due = Math.max(0, Math.floor((now - c.origin) / tickMs));
         let guard = 0;
-        while (c.nextTick <= now && guard++ < 48) {
+        while (c.tick < due && guard++ < 96) {
+          c.tick++;
           clockTick();
-          c.nextTick += tickMs;
         }
-        if (c.nextTick < now - tickMs * 8) c.nextTick = now;
+        if (c.f8Sent == null) c.f8Sent = 0;
+        if (c.f8Sent < due) {
+          sendOneClock();
+          c.f8Sent++;
+        }
         c.raf = requestAnimationFrame(loop);
       };
       c.raf = requestAnimationFrame(loop);
@@ -4004,8 +4019,18 @@
       const c = state.clock;
       armClockOn();
       c.running = true;
-      if (fromStart) { c.tick = 0; c.seqStep = 0; c.halted = false; }
-      else c.halted = false;
+      if (fromStart) {
+        c.tick = 0;
+        c.seqStep = 0;
+        c.halted = false;
+        c.origin = performance.now();
+        c.f8Sent = 0;
+      } else {
+        c.halted = false;
+        const tickMs = 60000 / Math.max(20, c.bpm || 120) / 24;
+        c.origin = performance.now() - (c.tick || 0) * tickMs;
+        c.f8Sent = c.tick || 0;
+      }
       if (c.recArm && !c.recording && !c.playClip) {
         c.recording = true;
         c.take = [];
