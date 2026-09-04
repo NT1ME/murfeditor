@@ -1672,6 +1672,12 @@
       state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
     }
     function midiPanic() {
+      if (state.output) {
+        const ch = midiChannelByte();
+        for (let n = 36; n <= 108; n++) {
+          try { state.output.send([0x80 | ch, n, 0]); } catch (e) {}
+        }
+      }
       try {
         if (typeof perfHeld !== 'undefined') perfHeld.clear();
         if (typeof perfLatched !== 'undefined') perfLatched.clear();
@@ -3985,11 +3991,11 @@
         if (ev.cc === 89) state.clock.armed = ev.val >= 64;
       }
     }
-    function sendOneClock() {
+    function sendClockAt(when) {
       if (!state.clock.running || !state.clock.armed) return;
-      if (state.output) { try { state.output.send([0xF8]); } catch (e) {} }
+      if (state.output) { try { state.output.send([0xF8], when); } catch (e) {} }
       if (state.monitor && state.monitorClock) {
-        try { state.monitor.send([0xF8]); } catch (e) {}
+        try { state.monitor.send([0xF8], when); } catch (e) {}
       }
     }
     function startTimer() {
@@ -4011,7 +4017,7 @@
         if (c.f8Sent == null) c.f8Sent = 0;
         let f8Guard = 0;
         while (c.f8Sent < due && f8Guard++ < 96) {
-          sendOneClock();
+          sendClockAt(c.origin + c.f8Sent * tickMs);
           c.f8Sent++;
         }
         c.raf = requestAnimationFrame(loop);
@@ -5491,7 +5497,7 @@
         p.rowIndex = 0;
         p.patternTick = 0;
         pcToSlot(firstSlot);
-        sendRT(0xFC);
+        haltPattern();
         sendCC(90, 127);
         setFollow(false);
         updateChainChrome();
