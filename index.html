@@ -3017,6 +3017,9 @@
       perfLatched.delete(note);
       document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.remove('active'));
     }
+    function releaseAllLatched() {
+      [...perfLatched].forEach(releaseNote);
+    }
     function stealBand(note) {
       const band = bandOfNote(note);
       if (band < 0) return;
@@ -3141,9 +3144,7 @@
         sendNoteOn(65, 100);
         setTimeout(() => sendNoteOff(65), 50);
         state.clock.seqStep = 0;
-        if (typeof releaseNote === 'function') {
-          [...(typeof perfLatched !== 'undefined' ? perfLatched : [])].forEach(n => releaseNote(n));
-        }
+        releaseAllLatched();
         setStatus('Clock Reset (Note 65) — latch cleared');
         updatePlayheads();
       });
@@ -3850,6 +3851,7 @@
       }
       updateClockReadout();
       if (state.follow) updatePlayheads();
+      releaseAllLatched();
       if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
     function currentBankSlots() {
@@ -3963,8 +3965,8 @@
         if (state.output) state.output.send([0x80 | midiChannelByte(), ev.note, 0]);
         lightPerfNote(ev.note, false);
       }
-      else if (ev.kind === 'start') { if ((ev.t || 0) !== 0) sendRT(0xFA); }
-      else if (ev.kind === 'cont') { if ((ev.t || 0) !== 0) sendRT(0xFB); }
+      else if (ev.kind === 'start') { if ((ev.t || 0) !== 0) { sendRT(0xFA); releaseAllLatched(); } }
+      else if (ev.kind === 'cont') { if ((ev.t || 0) !== 0) { sendRT(0xFB); releaseAllLatched(); } }
       else if (ev.kind === 'stop') { if ((ev.t || 0) !== 0) sendRT(0xFC); }
       else if (ev.kind === 'bpm') {
         applyBpm(ev.val);
@@ -4049,6 +4051,7 @@
         c.take = [];
       }
       if (fromStart) sendRT(0xFA); else sendRT(0xFB);
+      releaseAllLatched();
       startTimer();
       updateClockReadout();
       setStatus(fromStart ? 'Play' : 'Continue');
@@ -5414,6 +5417,7 @@
       const needStart = row.type === 'pattern' && p.needStartAfterTs && p.running && p.clipArmed !== false;
       if (needStart) {
         sendRT(0xFA);
+        releaseAllLatched();
         p.needStartAfterTs = false;
         state.clock.halted = false;
         state.clock.seqStep = 0;
