@@ -4175,8 +4175,6 @@
           rows: JSON.parse(localStorage.getItem('murf-rows') || '{}'),
           lists: (typeof loadListLibrary === 'function') ? loadListLibrary() : {},
           playlist: (typeof snapshotPlaylist === 'function') ? snapshotPlaylist() : null,
-          playlistMode: p.mode || 'dump',
-          playlistSetChain: !!p.setChain,
           digits: loadDigitMap(),
           divBank: state.clock.bank || 0,
           customDivs: (state.clock.customDivs || defaultCustomDivs()).slice()
@@ -4231,8 +4229,12 @@
         try {
           if (p.lists && typeof writeListLibrary === 'function') writeListLibrary(p.lists);
           if (p.playlist && typeof applyPlaylistSnap === 'function') applyPlaylistSnap(p.playlist);
-          if (p.playlistMode) state.playlist.mode = p.playlistMode;
-          if (p.playlistSetChain != null) state.playlist.setChain = !!p.playlistSetChain;
+          if (state.playlist) {
+            state.playlist.mode = 'dump';
+            state.playlist.setChain = false;
+            state.playlist.running = false;
+            state.playlist.clipRunning = false;
+          }
           if (typeof refreshPlListSelect === 'function') refreshPlListSelect();
           if (typeof renderPlaylist === 'function') renderPlaylist();
         } catch (e) { errs.push('playlist'); }
@@ -5376,10 +5378,12 @@
       if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
       p.setChain = true;
       p.seqHalted = false;
-      p.primedSlot = null;
+      p.primedSlot = firstSlot;
+      p.rowIndex = 0;
+      if (firstSlot != null) pcToSlot(firstSlot);
       setFollow(false);
       updateChainChrome();
-      setStatus('Chain set — ' + dumped + ' patterns dumped. Press Play or Continue.');
+      setStatus('Chain set — ' + dumped + ' dumped, slot ' + firstSlot + ' selected. Press Play (Start only).');
     }
     function dropChain(reason) {
       const p = state.playlist;
@@ -5419,8 +5423,10 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-        enterPlaylistRow(hit ? hit.i : 0);
+        if (!fromStart) {
+          const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
+          enterPlaylistRow(hit ? hit.i : 0);
+        }
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
@@ -5488,7 +5494,7 @@
       p.slotA = snap.slotA || 12;
       p.slotB = snap.slotB || 24;
       p.playMode = snap.playMode || 'loop';
-      p.mode = snap.mode || p.mode || 'dump';
+      p.mode = 'dump';
       p.clipName = '';
       p.clipCount = snap.clipCount || 0;
       p.clipRows = snap.clipRows || [];
