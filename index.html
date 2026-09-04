@@ -1569,14 +1569,14 @@
       updatePlayheads();
     }
     function pauseAll() {
-      haltPattern();
       clockStopDevice();
+      haltPattern();
       flashBtn('btnPauseAll');
-      setStatus('Pause all — Halt + clock stopped');
+      setStatus('Pause all — clock stopped + Halt');
     }
     function resetAll() {
-      haltPattern();
       clockStopDevice();
+      haltPattern();
       stopClipPlayback();
       midiPanic();
       state.clock.seqStep = 0;
@@ -1595,7 +1595,7 @@
         }
       }
       flashBtn('btnResetAll');
-      setStatus('Reset all + notes off');
+      setStatus('Reset all');
       updatePlayheads();
       updateClockReadout();
       if (typeof updateChainChrome === 'function') updateChainChrome();
@@ -3986,7 +3986,7 @@
       }
     }
     function sendOneClock() {
-      if (!state.clock.armed) return;
+      if (!state.clock.running || !state.clock.armed) return;
       if (state.output) { try { state.output.send([0xF8]); } catch (e) {} }
       if (state.monitor && state.monitorClock) {
         try { state.monitor.send([0xF8]); } catch (e) {}
@@ -4066,10 +4066,10 @@
     }
     function clockStopDevice() {
       const c = state.clock;
-      sendRT(0xFC);
-      if (c.recording) recordEvent({ kind: 'stop' });
       c.running = false;
       stopTimer();
+      sendRT(0xFC);
+      if (c.recording) recordEvent({ kind: 'stop' });
       updateClockReadout();
       setStatus('Clock stop');
       if (state.playlist) {
@@ -5424,6 +5424,10 @@
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
+      if (state.clock.running) {
+        state.clock.running = false;
+        stopTimer();
+      }
       let dumped = 0;
       let firstSlot = null;
       for (let i = 0; i < p.rowCount; i++) {
