@@ -5354,7 +5354,7 @@
         p.patternTick = 0;
         p.rowIndex = 0;
         p.preloaded = false;
-        enterPlaylistRow(0, true);
+        enterPlaylistRow(0);
         document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === 0));
         return;
       }
@@ -5397,29 +5397,23 @@
       if (row.type === 'pattern' || row.type === 'rest') return chainSlotForRow(idx);
       return null;
     }
-    function enterPlaylistRow(idx, forceStart) {
+    function enterPlaylistRow(idx) {
       const p = state.playlist;
       const row = p.rows[idx];
       if (!row) return;
-      p.needStartAfterTs = false;
-      if (row.type === 'rest') {
-        if (p.running) haltPattern();
-        setStatus('Chain → rest · Halt');
-        return;
-      }
       const slot = rowDestSlot(idx);
       if (slot == null) { setStatus('Row ' + (idx + 1) + ' needs a type'); return; }
       pcToSlot(slot);
-      const prevRow = idx > 0 ? p.rows[idx - 1] : null;
-      const afterRest = !!forceStart || (prevRow && prevRow.type === 'rest');
-      if (p.running && afterRest) {
+      if (p.clipArmed === false) p.needStartAfterTs = false;
+      const needStart = row.type === 'pattern' && p.needStartAfterTs && p.running && p.clipArmed !== false;
+      if (needStart) {
         sendRT(0xFA);
+        p.needStartAfterTs = false;
         state.clock.halted = false;
         state.clock.seqStep = 0;
-        setStatus('Chain → slot ' + slot + ' + Start' + (row.patternName ? ' · ' + row.patternName : ''));
+        setStatus('Chain → slot ' + slot + ' + Start (after Trigger/Sustain)');
       } else {
-        state.clock.halted = false;
-        setStatus('Chain → slot ' + slot + (row.patternName ? ' · ' + row.patternName : ''));
+        setStatus('Chain → slot ' + slot + (row.type === 'rest' ? ' · blank' : (row.patternName ? ' · ' + row.patternName : '')));
       }
     }
     function preloadNextRow(idx) {
@@ -5472,7 +5466,9 @@
         const row = p.rows[i];
         if (!row) continue;
         if (row.type === 'rest') {
-          continue;
+          const slot = chainSlotForRow(i);
+          jobs.push(blankDumpBytes(slot));
+          if (firstSlot == null) firstSlot = slot;
         } else if (row.type === 'pattern') {
           const slot = chainSlotForRow(i);
           const bytes = row.patternName ? sysexForName(row.patternName, slot) : null;
@@ -5540,9 +5536,7 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        if (fromStart) {
-          enterPlaylistRow(0);
-        } else {
+        if (!fromStart) {
           const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
           enterPlaylistRow(hit ? hit.i : 0);
         }
