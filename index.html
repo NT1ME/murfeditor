@@ -1554,18 +1554,11 @@
       if (state.ccs && state.ccs['20'] != null) return state.ccs['20'] & 0x7F;
       return 0;
     }
-    function haltValue() {
-      const v = currentF1();
-      return v > 0 ? v : 64;
-    }
-    function sendHalt() {
-      state.clock.halted = true;
-      sendCC(20, haltValue());
-    }
     function haltPattern() {
-      sendHalt();
+      state.clock.halted = true;
+      sendCC(20, currentF1());
       flashBtn('btnHaltPattern');
-      setStatus('Halt (CC20 @ ' + haltValue() + ')');
+      setStatus('Halt (CC20 @ ' + currentF1() + ')');
       updatePlayheads();
     }
     function pauseAll() {
@@ -1579,7 +1572,6 @@
       clockStopDevice();
       stopClipPlayback();
       midiPanic();
-      sendCC(90, 127);
       state.clock.seqStep = 0;
       state.clock.playClip = false;
       if (state.playlist) {
@@ -1673,11 +1665,7 @@
       state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
     }
     function midiPanic() {
-      if (!state.output) return;
-      const ch = midiChannelByte();
-      for (let n = 36; n <= 108; n++) {
-        try { state.output.send([0x80 | ch, n, 0]); } catch (e) {}
-      }
+      sendCC(123, 0);
       try {
         if (typeof perfHeld !== 'undefined') perfHeld.clear();
         if (typeof perfLatched !== 'undefined') perfLatched.clear();
@@ -5434,7 +5422,7 @@
       p.rowIndex = 0;
       p.patternTick = 0;
       if (firstSlot != null) pcToSlot(firstSlot);
-      sendHalt();
+      sendRT(0xFC);
       sendCC(90, 127);
       setFollow(false);
       updateChainChrome();
