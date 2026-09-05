@@ -5467,8 +5467,15 @@
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
       if (state.clock.running) {
-        state.clock.running = false;
-        stopTimer();
+        // Actually tell the hardware to Stop, not just kill our own JS
+        // timer. Without this the MuRF still believes it's MIDI-synced,
+        // and per the firmware addendum a CC90 Pattern Reset sent while
+        // synced is deferred to "the next synchronized beat" instead of
+        // applying instantly - a beat that never arrives here since we've
+        // silently stopped sending clock. That leaves the park below
+        // (Halt + CC90) racing an unresolved reset, which only resolves
+        // whenever the next Start's clock ticks happen to reach it.
+        clockStopDevice();
       }
       const jobs = [];
       let firstSlot = null;
