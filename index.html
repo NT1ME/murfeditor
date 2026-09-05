@@ -796,6 +796,24 @@
       flex-direction: column;
       height: 100%;
     }
+
+    /* MIDI activity log */
+    .midi-log-list {
+      height: 60vh;
+      min-height: 260px;
+      overflow-y: auto;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 12px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+    }
+    .midi-log-list .row { display: flex; gap: 10px; }
+    .midi-log-list .t { color: var(--text-dim); flex-shrink: 0; }
+    .midi-log-list .empty { color: var(--text-dim); font-style: italic; }
   </style>
 </head>
 <body>
@@ -896,6 +914,7 @@
       <button class="tab" data-tab="stack">Stack</button>
       <button class="tab" data-tab="clock">Clips</button>
       <button class="tab" data-tab="playlist">Playlist</button>
+      <button class="tab" data-tab="log">Log</button>
     </div>
 
     <main>
@@ -1238,6 +1257,20 @@
         </div>
       </div>
 
+      <!-- ========== LOG TAB ========== -->
+      <div class="view" id="view-log">
+        <div class="panel">
+          <h2>MIDI Activity Log</h2>
+          <p class="hint" style="margin-top:-6px">Only the messages that matter for debugging: Program Change, Control Change, SysEx dumps, and Start/Stop/Continue. Clock ticks and note on/off are left out on purpose so this stays short enough to copy and paste.</p>
+          <div class="row" style="gap:8px;margin-bottom:8px">
+            <button type="button" id="btnMidiLogCopy">Copy log</button>
+            <button type="button" id="btnMidiLogClear">Clear log</button>
+            <span class="hint" id="midiLogCount" style="align-self:center">0 entries</span>
+          </div>
+          <div class="midi-log-list" id="midiLogList"><div class="empty">Nothing logged yet — this fills in as you use the app.</div></div>
+        </div>
+      </div>
+
     </main>
 
     <div class="status-bar" id="status">Ready</div>
@@ -1501,8 +1534,100 @@
       try { state.output.send(bytes); ok = true; } catch (e) {
         setStatus('MIDI port stalled — pick the port again');
       }
-      if (ok) flashMidi();
+      if (ok) { flashMidi(); logMidiOut(bytes); }
       return ok;
+    }
+
+    // ---------- MIDI activity log (Log tab) ----------
+    // Deliberately fed only from midiSend(), which Program Change, Control
+    // Change, SysEx, and Start/Stop/Continue all funnel through. Clock ticks
+    // and note on/off bypass midiSend entirely (they go straight to
+    // state.output.send for timestamp precision), so they never reach this
+    // log - no separate filtering needed to keep clock floods out of it.
+    const midiLog = { entries: [], max: 2000 };
+    const MIDI_LOG_CC_NAMES = { 9: 'Division', 89: 'Clock Sync', 90: 'Pattern Reset' };
+    function midiLogCcName(cc) {
+      if (cc >= 20 && cc <= 27) return 'Halt/Filter ' + (cc - 19) + ' Lvl';
+      return MIDI_LOG_CC_NAMES[cc] || null;
+    }
+    function midiLogTime() {
+      const d = new Date();
+      const p = (n, w) => String(n).padStart(w || 2, '0');
+      return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds()) + '.' + p(d.getMilliseconds(), 3);
+    }
+    function describeMidiOut(bytes) {
+      if (!bytes || !bytes.length) return null;
+      const status = bytes[0];
+      const hi = status & 0xF0;
+      if (status === 0xFA) return 'Start';
+      if (status === 0xFB) return 'Continue';
+      if (status === 0xFC) return 'Stop';
+      if (hi === 0xC0) return 'Program Change → ' + ((bytes[1] | 0) + 1);
+      if (hi === 0xB0) {
+        const cc = bytes[1] | 0, val = bytes[2] | 0;
+        const name = midiLogCcName(cc);
+        return 'CC' + cc + (name ? ' (' + name + ')' : '') + ' = ' + val;
+      }
+      if (status === 0xF0) {
+        // Pattern dump format: F0 04 0A 05 '0081' <2-hex-char slot> ... F7
+        if (bytes.length >= 10 && bytes[4] === 0x30 && bytes[5] === 0x30 && bytes[6] === 0x38 && bytes[7] === 0x31) {
+          const slotStr = String.fromCharCode(bytes[8], bytes[9]);
+          const slot = parseInt(slotStr, 16);
+          if (!isNaN(slot)) return 'SysEx dump → slot ' + slot;
+        }
+        return 'SysEx (' + bytes.length + ' bytes)';
+      }
+      return null; // not one of the message types this log tracks
+    }
+    function logMidiOut(bytes) {
+      const text = describeMidiOut(bytes);
+      if (!text) return;
+      const entries = midiLog.entries;
+      entries.push({ time: midiLogTime(), text });
+      if (entries.length > midiLog.max) entries.shift();
+      renderMidiLogEntry(entries[entries.length - 1]);
+      updateMidiLogCount();
+    }
+    function renderMidiLogEntry(entry) {
+      const list = document.getElementById('midiLogList');
+      if (!list) return;
+      const empty = list.querySelector('.empty');
+      if (empty) empty.remove();
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<span class="t"></span><span class="m"></span>';
+      row.querySelector('.t').textContent = entry.time;
+      row.querySelector('.m').textContent = entry.text;
+      list.appendChild(row);
+      list.scrollTop = list.scrollHeight;
+    }
+    function updateMidiLogCount() {
+      const el = document.getElementById('midiLogCount');
+      if (el) el.textContent = midiLog.entries.length + ' entr' + (midiLog.entries.length === 1 ? 'y' : 'ies');
+    }
+    function clearMidiLog() {
+      midiLog.entries.length = 0;
+      const list = document.getElementById('midiLogList');
+      if (list) list.innerHTML = '<div class="empty">Nothing logged yet — this fills in as you use the app.</div>';
+      updateMidiLogCount();
+    }
+    function copyMidiLog() {
+      const text = midiLog.entries.map(e => e.time + '\t' + e.text).join('\n');
+      if (!text) { setStatus('Log is empty'); return; }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(
+          () => setStatus('Log copied (' + midiLog.entries.length + ' entries)'),
+          () => setStatus('Copy failed — clipboard permission?')
+        );
+      } else {
+        setStatus('Clipboard not available in this browser');
+      }
+    }
+    function initMidiLog() {
+      const copyBtn = document.getElementById('btnMidiLogCopy');
+      const clearBtn = document.getElementById('btnMidiLogClear');
+      if (copyBtn) copyBtn.addEventListener('click', copyMidiLog);
+      if (clearBtn) clearBtn.addEventListener('click', clearMidiLog);
     }
     function sendCC(cc, value) {
       if (state.clock && state.clock.recording && (cc === 90)) recordEvent({ kind: 'cc', cc: 90, val: value | 0 });
@@ -3371,7 +3496,7 @@
     }
 
     function cycleAppTab(dir) {
-      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist'];
+      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist', 'log'];
       const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
       let i = order.indexOf(cur);
       if (i < 0) i = 0;
@@ -5849,6 +5974,7 @@
       }
 
       initTabs();
+      initMidiLog();
       initMainControls();
       initPatternToolbar();
       buildGrid();
