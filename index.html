@@ -810,14 +810,6 @@
             <option value="">Select port…</option>
           </select>
           <button id="btnRefreshMidi" title="Refresh MIDI ports">↻</button>
-          <label class="clock-mini">Also
-            <select id="midiMonitor" style="max-width:140px" title="Second port for Protokol / IAC. Same messages as the MuRF port.">
-              <option value="">— monitor —</option>
-            </select>
-          </label>
-          <label class="clock-mini" title="Send clock pulses to the monitor port. Leave off so Protokol can save the dump.">
-            <input type="checkbox" id="monitorClock"> clk
-          </label>
           <label class="clock-mini">Ch
             <select id="midiChannel">
               <option value="1" selected>1</option>
@@ -1288,8 +1280,6 @@
     const state = {
       midiAccess: null,
       output: null,
-      monitor: null,
-      monitorClock: false,
       channel: 1,
       ccs: {}, // 1-16
       autoSend: false,
@@ -1481,39 +1471,17 @@
     }
     function refreshPorts() {
       const sel = document.getElementById('midiPort');
-      const mon = document.getElementById('midiMonitor');
       fillPortSelect(sel, sel && sel.value, 'Select port…');
-      fillPortSelect(mon, mon && mon.value, '— monitor —');
       updateMidiLed();
     }
 
     function selectPort(id) {
       if (!state.midiAccess) return;
       state.output = id ? state.midiAccess.outputs.get(id) : null;
-      if (id && state.monitor && state.output && state.monitor.id === state.output.id) {
-        state.monitor = null;
-        const mon = document.getElementById('midiMonitor');
-        if (mon) mon.value = '';
-        setStatus('Also cleared — same port as Main');
-      }
       updateMidiLed();
       document.getElementById('midiLabel').textContent =
         state.output ? 'MIDI: ' + state.output.name : 'MIDI: disconnected';
-      const extra = state.monitor ? ' + ' + state.monitor.name : '';
-      setStatus(state.output ? ('Connected: ' + state.output.name + extra) : 'No port selected');
-    }
-    function selectMonitor(id) {
-      if (!state.midiAccess) return;
-      const mainId = state.output && state.output.id;
-      if (id && mainId && id === mainId) {
-        setStatus('Also cannot be the same port as Main');
-        const mon = document.getElementById('midiMonitor');
-        if (mon) mon.value = '';
-        state.monitor = null;
-        return;
-      }
-      state.monitor = id ? state.midiAccess.outputs.get(id) : null;
-      setStatus(state.monitor ? ('Monitor: ' + state.monitor.name) : 'Monitor off');
+      setStatus(state.output ? ('Connected: ' + state.output.name) : 'No port selected');
     }
 
     function updateMidiLed() {
@@ -1528,15 +1496,10 @@
     }
 
     function midiSend(bytes) {
-      if (!state.output && !state.monitor) return false;
+      if (!state.output) return false;
       let ok = false;
-      if (state.output) {
-        try { state.output.send(bytes); ok = true; } catch (e) {
-          setStatus('MIDI port stalled — pick the port again');
-        }
-      }
-      if (state.monitor) {
-        try { state.monitor.send(bytes); ok = true; } catch (e) {}
+      try { state.output.send(bytes); ok = true; } catch (e) {
+        setStatus('MIDI port stalled — pick the port again');
       }
       if (ok) flashMidi();
       return ok;
@@ -1688,11 +1651,16 @@
       return bytes instanceof Uint8Array ? bytes : new Uint8Array(a);
     }
     function sendSysex(bytes) {
-      if (!state.output && !state.monitor) {
+      if (!state.output) {
         setStatus('No MIDI port selected');
         return;
       }
-      if (midiSend(trimSysex(bytes))) setStatus('SysEx sent');
+      const trimmed = trimSysex(bytes);
+      // Physical transmission at 31250 baud is ~0.32ms/byte; budget ~1ms/byte
+      // plus a flat margin and hold off sending clock ticks until then - see
+      // the matching comment in startTimer().
+      state.clock.sysexBusyUntil = performance.now() + trimmed.length + 50;
+      if (midiSend(trimmed)) setStatus('SysEx sent');
     }
 
     // ---------- SysEx Pattern Generator (proven format) ----------
@@ -3991,9 +3959,6 @@
     function sendClockAt(when) {
       if (!state.clock.running || !state.clock.armed) return;
       if (state.output) { try { state.output.send([0xF8], when); } catch (e) {} }
-      if (state.monitor && state.monitorClock) {
-        try { state.monitor.send([0xF8], when); } catch (e) {}
-      }
     }
     function startTimer() {
       stopTimer();
@@ -4012,7 +3977,15 @@
           clockTick();
         }
         if (c.f8Sent == null) c.f8Sent = 0;
-        if (due - c.f8Sent > 8) {
+        if (now < (c.sysexBusyUntil || 0)) {
+          // A SysEx dump is (probably) still physically transmitting -
+          // don't interleave clock bytes into it. There's no guaranteed-
+          // correct handling of that at the browser/interface level, and a
+          // corrupted SysEx can wedge the MuRF's receiver until it's
+          // physically bypassed. Quietly resync after, same as a stall,
+          // rather than risk that.
+          c.f8Sent = due;
+        } else if (due - c.f8Sent > 8) {
           // A real stall (tab backgrounded, screen locked, etc.) - don't
           // blast the backlog at the device as a burst, just resync.
           c.f8Sent = due;
@@ -5898,13 +5871,6 @@
       document.getElementById('midiPort').addEventListener('change', (e) => {
         selectPort(e.target.value);
         persistSession();
-      });
-      document.getElementById('midiMonitor')?.addEventListener('change', (e) => {
-        selectMonitor(e.target.value);
-      });
-      document.getElementById('monitorClock')?.addEventListener('change', (e) => {
-        state.monitorClock = !!e.target.checked;
-        setStatus(state.monitorClock ? 'Monitor includes clock' : 'Monitor skips clock pulses');
       });
       document.getElementById('btnRefreshMidi').addEventListener('click', refreshPorts);
 
