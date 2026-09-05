@@ -5533,10 +5533,21 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        if (!fromStart) {
-          const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-          enterPlaylistRow(hit ? hit.i : 0);
-        }
+        // Re-issue the Program Change for the current row on every Play,
+        // including a fresh Start - not just Continue. Set Chain already
+        // sent PC to the first row's slot once, while the transport was
+        // stopped, but that's the only PC the hardware would ever see for
+        // row 0 without this: the tick-driven row-change logic in
+        // playlistOnTick() only fires when the row index CHANGES, and on a
+        // fresh Start rowIndex is already reset to 0 above, so it never
+        // sees a change and never re-sends PC. If that first PC didn't
+        // stick (sent while stopped, or anything else nudged the device's
+        // pattern selection in the meantime), Start would just keep
+        // playing whatever pattern was already active instead of the
+        // chain's first row - which is exactly the "chain sends data but
+        // the old pattern is what plays" symptom this fixes.
+        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
+        enterPlaylistRow(hit ? hit.i : 0);
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
