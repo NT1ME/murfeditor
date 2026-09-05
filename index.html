@@ -4986,7 +4986,14 @@
       msg.push(0xF7);
       return new Uint8Array(msg);
     }
-    const DUMP_GAP_MS = 200;
+    // Bumped hard from 200ms as a blunt diagnostic: content/framing of the
+    // dumps has been verified byte-correct against known-good factory .syx
+    // files, and resending doesn't recover a wedged MuRF, so the remaining
+    // open question is whether the device just needs more time to process
+    // each dump than Set Chain's compressed timing ever gives it. If chain
+    // playback still locks up with a full second of breathing room here,
+    // this isn't it and the gap should come back down.
+    const DUMP_GAP_MS = 1000;
     let dumpQueueBusy = false;
     function sendSysexSpaced(list, afterFn) {
       const jobs = (list || []).filter(Boolean);
