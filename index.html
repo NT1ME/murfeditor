@@ -1582,7 +1582,10 @@
         state.playlist.armedRow = null;
         if (state.playlist.setChain && state.playlist.rowCount) {
           const slot = (typeof rowDestSlot === 'function') ? rowDestSlot(0) : null;
-          if (slot != null) pcToSlot(slot);
+          // midiPanic() just scheduled 73 note-offs spaced 2ms apart (~146ms) via
+          // timestamped output.send() calls; Web MIDI transmits by timestamp, not
+          // call order, so an un-timestamped send here could jump ahead of them.
+          if (slot != null) setTimeout(() => pcToSlot(slot), 160);
         }
       }
       flashBtn('btnResetAll');
@@ -1665,8 +1668,9 @@
     function midiPanic() {
       if (state.output) {
         const ch = midiChannelByte();
+        const t0 = performance.now();
         for (let n = 36; n <= 108; n++) {
-          try { state.output.send([0x80 | ch, n, 0]); } catch (e) {}
+          try { state.output.send([0x80 | ch, n, 0], t0 + (n - 36) * 2); } catch (e) {}
         }
       }
       try {
