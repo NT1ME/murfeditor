@@ -5608,18 +5608,21 @@
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
-      if (state.clock.halted) {
-        // The MuRF has no real "pause" - Halt is CC20 (Filter 1 Level)
-        // repurposed to freeze the pattern, and the addendum says that only
-        // clears on Rate change, Rate CV, or MIDI Start/Continue. Real-
-        // hardware tests this session showed sending anything at all - a
-        // SysEx dump included - into the MuRF while it's sitting in that
-        // halted state reliably breaks MIDI outright, needing a manual
-        // bypass to recover. Continue clears the halt (and resumes exactly
-        // where the tick position already was) before the dump ever
-        // touches the wire.
-        clockPlay(false);
-      }
+      // Unconditional, not gated on state.clock.halted - that flag is just
+      // in-memory JS state, with no way to ask the actual hardware whether
+      // it's really halted, and it doesn't survive a page reload. A reload
+      // right after halting the MuRF manually reproduced exactly this: the
+      // flag came back false, so this guard never fired, and the dump went
+      // straight into a device that was still genuinely halted - full MIDI
+      // breakage, same as every other case this session. Sending Continue
+      // when the MuRF *wasn't* actually halted is harmless (just a normal
+      // resume), so there's no reason to gate this on a flag we can't fully
+      // trust - the MuRF has no real "pause" (Halt is CC20/Filter 1 Level
+      // repurposed to freeze the pattern), and the addendum says that only
+      // clears on Rate change, Rate CV, or MIDI Start/Continue - never on
+      // SysEx or Program Change, which is exactly what a dump is about to
+      // send.
+      clockPlay(false);
       if (state.clock.running) {
         // Stop the transport before dumping - we're about to overwrite the
         // pattern slots' memory, which shouldn't happen while the MuRF is
