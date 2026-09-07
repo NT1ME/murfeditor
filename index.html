@@ -820,6 +820,41 @@
     .midi-log-list .row { display: flex; gap: 10px; }
     .midi-log-list .t { color: var(--text-dim); flex-shrink: 0; }
     .midi-log-list .empty { color: var(--text-dim); font-style: italic; }
+
+    /* MIDI tab: ports + external mapping table */
+    .midi-port-list { display: flex; flex-direction: column; gap: 6px; }
+    .midi-port-row {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 6px 8px; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 6px;
+    }
+    .midi-port-name { font-weight: 600; flex: 1; min-width: 120px; }
+    .midi-role-chk { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); }
+    .midi-role-chk:has(input:not(:disabled)) { color: var(--text); }
+    .midi-port-empty { color: var(--text-dim); font-style: italic; padding: 6px 0; }
+    .midi-map-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .midi-map-row {
+      display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+      padding: 6px 8px; background: var(--panel); border: 1px solid var(--border);
+      border-radius: 6px; font-size: 12px;
+    }
+    .midi-map-control { font-weight: 600; min-width: 130px; }
+    .midi-map-src { color: var(--text-dim); min-width: 160px; }
+    .midi-map-kind { color: var(--text-dim); }
+    .midi-map-clear { margin-left: auto; }
+    button.map-ext-pick { outline: 2px solid #7dffb0; }
+    button.on-map-ext {
+      background: #7dffb0 !important;
+      color: #111 !important;
+      box-shadow: 0 0 0 2px #bfffdc;
+    }
+    .rel-abs-toast {
+      position: fixed; bottom: 44px; right: 16px; z-index: 50;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 12px;
+    }
+    .rel-abs-toast button.on { background: #7dffb0; color: #111; border-color: #7dffb0; }
   </style>
 </head>
 <body>
@@ -909,6 +944,7 @@
         <button id="btnGlobalClockReset" title="Note 65 / C" data-kbd="C">Clk Reset</button>
         <button id="btnResetAll" title="Halt + stop + clip off + pattern to 1 / ⌥Z" data-kbd="⌥Z">Reset all</button>
         <button type="button" id="btnMapMode" data-kbd="Map">Map</button>
+        <button type="button" id="btnMapExternal" title="Learn external MIDI controller knobs/buttons into app parameters, active on every tab">Map External</button>
         <button type="button" id="btnHelpHints" data-kbd="?">?</button>
       </div>
     </header>
@@ -921,6 +957,7 @@
       <button class="tab" data-tab="clock">Clips</button>
       <button class="tab" data-tab="playlist">Playlist</button>
       <button class="tab" data-tab="log">Log</button>
+      <button class="tab" data-tab="midi">MIDI</button>
     </div>
 
     <main>
@@ -964,39 +1001,39 @@
             <div class="row" style="gap:16px">
               <div class="control" style="flex:1">
                 <label>Drive (CC2)</label>
-                <input type="range" min="0" max="127" value="64" data-cc="2" class="cc-slider" />
+                <input type="range" min="0" max="127" value="64" data-cc="2" class="cc-slider" id="slider-cc-2" />
                 <input type="number" class="value-input" min="0" max="127" value="64" />
               </div>
               <div class="control" style="flex:1">
                 <label>Output (CC7)</label>
-                <input type="range" min="0" max="127" value="100" data-cc="7" class="cc-slider" />
+                <input type="range" min="0" max="127" value="100" data-cc="7" class="cc-slider" id="slider-cc-7" />
                 <input type="number" class="value-input" min="0" max="127" value="100" />
               </div>
               <div class="control" style="flex:1">
                 <label>Mix (CC8)</label>
-                <input type="range" min="0" max="127" value="127" data-cc="8" class="cc-slider" />
+                <input type="range" min="0" max="127" value="127" data-cc="8" class="cc-slider" id="slider-cc-8" />
                 <input type="number" class="value-input" min="0" max="127" value="127" />
               </div>
             </div>
             <div class="row" style="gap:16px; margin-top:12px">
               <div class="control" style="flex:1">
                 <label>Envelope (CC1)</label>
-                <input type="range" min="0" max="127" value="64" data-cc="1" class="cc-slider" />
+                <input type="range" min="0" max="127" value="64" data-cc="1" class="cc-slider" id="slider-cc-1" />
                 <input type="number" class="value-input" min="0" max="127" value="64" />
               </div>
               <div class="control" style="flex:1">
                 <label>Env Scale (CC70)</label>
-                <input type="range" min="0" max="127" value="64" data-cc="70" class="cc-slider" />
+                <input type="range" min="0" max="127" value="64" data-cc="70" class="cc-slider" id="slider-cc-70" />
                 <input type="number" class="value-input" min="0" max="127" value="64" />
               </div>
               <div class="control" style="flex:1">
                 <label>Rate (CC9)</label>
-                <input type="range" min="0" max="127" value="64" data-cc="9" class="cc-slider" />
+                <input type="range" min="0" max="127" value="64" data-cc="9" class="cc-slider" id="slider-cc-9" />
                 <input type="number" class="value-input" min="0" max="127" value="64" />
               </div>
               <div class="control" style="flex:1">
                 <label>LFO/Sweep (CC3)</label>
-                <input type="range" min="0" max="127" value="64" data-cc="3" class="cc-slider" />
+                <input type="range" min="0" max="127" value="64" data-cc="3" class="cc-slider" id="slider-cc-3" />
                 <input type="number" class="value-input" min="0" max="127" value="64" />
               </div>
             </div>
@@ -1278,9 +1315,39 @@
         </div>
       </div>
 
+      <!-- ========== MIDI TAB ========== -->
+      <div class="view" id="view-midi">
+        <div class="row" style="gap:12px; align-items:flex-start; flex-wrap:wrap">
+          <div class="panel" style="flex:1; min-width:280px">
+            <h2>Input ports</h2>
+            <p class="hint" style="margin-top:-6px">Remote turns a port's incoming CC/notes into external control mappings — click "Map External" in the header, then click a slider or button to bind it. Track and Sync are reserved for future note/clock input features (see Roadmap).</p>
+            <div id="midiInputPorts" class="midi-port-list"></div>
+          </div>
+          <div class="panel" style="flex:1; min-width:280px">
+            <h2>Output ports</h2>
+            <p class="hint" style="margin-top:-6px">Track is the port the app actually sends patterns/CC/PC/clock to — check it here or use the port picker in the header, they stay in sync. Remote sends LED ring / button color feedback for any control mapped via Map External. Sync currently follows Track (independent clock-only routing is on the Roadmap).</p>
+            <div id="midiOutputPorts" class="midi-port-list"></div>
+          </div>
+        </div>
+        <div class="panel" style="margin-top:12px">
+          <div class="row" style="justify-content:space-between; align-items:center">
+            <h2 style="margin:0">External mappings</h2>
+            <button type="button" id="btnMidiMapClearAll">Clear all mappings</button>
+          </div>
+          <div id="midiMappingsList" class="midi-map-list"></div>
+        </div>
+      </div>
+
     </main>
 
     <div class="status-bar" id="status">Ready</div>
+    <div class="rel-abs-toast" id="mapRelAbsToast" hidden>
+      <span id="mapRelAbsLabel"></span>
+      <button type="button" id="raAbsBtn" data-mode="absolute">Absolute</button>
+      <button type="button" id="raRelBtn" data-mode="relative">Relative</button>
+      <label id="raStepWrap" hidden>Step <input type="number" id="raStepInput" min="1" max="20" value="1" style="width:40px"></label>
+      <button type="button" id="raCloseBtn" title="Dismiss">×</button>
+    </div>
     <div class="modal-back" id="confirmModal">
       <div class="modal-card">
         <p id="confirmMsg">Clear the in-app library? iCloud files will not be deleted.</p>
@@ -1376,7 +1443,12 @@
         ping: 'A',
         preloaded: false,
         seqHalted: false
-      }
+      },
+      mapExternalMode: false,
+      mapExternalTarget: null,
+      midiInputRoles: {},
+      midiOutputRoles: {},
+      remoteMappings: {}
     };
 
     const SESSION_KEY = 'murf-session-v27';
@@ -1490,10 +1562,13 @@
       try {
         state.midiAccess = await navigator.requestMIDIAccess({ sysex: true });
         state.midiAccess.onstatechange = refreshPorts;
+        loadMidiRoles();
+        loadRemoteMappings();
         refreshPorts();
         setStatus('MIDI ready — select a port');
       } catch (err) {
         setStatus('MIDI access denied or failed: ' + err.message);
+        if (isMidiTabActive()) renderMidiTab();
       }
     }
 
@@ -1513,6 +1588,8 @@
       const sel = document.getElementById('midiPort');
       fillPortSelect(sel, sel && sel.value, 'Select port…');
       updateMidiLed();
+      attachExternalInputListeners();
+      if (isMidiTabActive()) renderMidiTab();
     }
 
     function selectPort(id) {
@@ -1661,6 +1738,410 @@
       if (copyBtn) copyBtn.addEventListener('click', copyMidiLog);
       if (clearBtn) clearBtn.addEventListener('click', clearMidiLog);
     }
+
+    // ---------- External MIDI controller mapping (Map External / MIDI tab) ----------
+    // Independent from the digit-key Map mode above: this listens to whatever
+    // input ports have "Remote" checked in the MIDI tab and routes their CC/
+    // note messages straight to app controls (sliders, toggle buttons, plain
+    // action buttons), regardless of which app tab is on screen - the target
+    // elements always exist in the DOM, tabs only hide them with CSS. Learned
+    // mappings and port roles persist across reloads.
+    const MIDI_ROLES_KEY = 'murf-midi-roles-v1';
+    const REMOTE_MAP_KEY = 'murf-remote-map-v1';
+    const attachedInputIds = new Set();
+    const remoteEdgeState = {}; // key -> last received value, for rising-edge detection on plain action buttons
+    // While applyRemoteMapping fires a real el.click() to reuse a button's
+    // own handler, that click bubbles right back up to the Map External
+    // arm-listener below. Without this flag, a mapped control receiving a
+    // message *while still in Map External mode* would re-arm itself as the
+    // next learn target instead of actually firing - this suppresses the
+    // arm-listener only for that one synthetic click.
+    let suppressMapExternalIntercept = false;
+
+    function saveMidiRoles() {
+      try {
+        localStorage.setItem(MIDI_ROLES_KEY, JSON.stringify({
+          input: state.midiInputRoles,
+          output: state.midiOutputRoles
+        }));
+      } catch (_) {}
+    }
+    function loadMidiRoles() {
+      try {
+        const raw = localStorage.getItem(MIDI_ROLES_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        state.midiInputRoles = parsed.input || {};
+        state.midiOutputRoles = parsed.output || {};
+      } catch (_) {}
+    }
+    function saveRemoteMappings() {
+      try { localStorage.setItem(REMOTE_MAP_KEY, JSON.stringify(state.remoteMappings)); } catch (_) {}
+    }
+    function loadRemoteMappings() {
+      try {
+        const raw = localStorage.getItem(REMOTE_MAP_KEY);
+        if (raw) state.remoteMappings = JSON.parse(raw) || {};
+      } catch (_) { state.remoteMappings = {}; }
+    }
+    function ensurePortRoles(map, id) {
+      if (!map[id]) map[id] = { track: false, sync: false, remote: false };
+      return map[id];
+    }
+    function isMidiTabActive() {
+      const v = document.getElementById('view-midi');
+      return !!(v && v.classList.contains('active'));
+    }
+    // A Twister-style controller exposes matching input and output ports
+    // under the same name (one strand, bidirectional) - that's the only
+    // signal Web MIDI gives us to pair "learned from this input" with
+    // "send LED feedback to this output" without asking the user to wire
+    // it up by hand.
+    function findMatchingOutputId(portName) {
+      if (!state.midiAccess) return null;
+      for (const out of state.midiAccess.outputs.values()) {
+        if (out.name === portName) return out.id;
+      }
+      return null;
+    }
+
+    function attachExternalInputListeners() {
+      if (!state.midiAccess) return;
+      for (const input of state.midiAccess.inputs.values()) {
+        if (attachedInputIds.has(input.id)) continue;
+        attachedInputIds.add(input.id);
+        input.onmidimessage = (e) => onExternalMidiMessage(input.id, input.name, e);
+      }
+    }
+
+    function isMappableTarget(el) {
+      if (!el || !el.id) return false;
+      if (el.tagName === 'INPUT' && el.type === 'range' && el.classList.contains('cc-slider')) return true;
+      if (el.tagName === 'BUTTON' && el.id !== 'btnMapMode' && el.id !== 'btnMapExternal' && el.id !== 'btnHelpHints') return true;
+      return false;
+    }
+    function targetKind(el) {
+      if (el.classList.contains('cc-slider')) return 'slider';
+      if (el.classList.contains('toggle')) return 'toggle';
+      return 'oneshot';
+    }
+    function armMapExternalTarget(el) {
+      document.querySelectorAll('.map-ext-pick').forEach(b => b.classList.remove('map-ext-pick'));
+      el.classList.add('map-ext-pick');
+      state.mapExternalTarget = { id: el.id, kind: targetKind(el) };
+      setStatus('Map External: move a knob/fader or press a button on your controller for ' + el.id.replace(/^btn|^tog|^slider-cc-/, ''));
+    }
+
+    function initMapExternal() {
+      const btn = document.getElementById('btnMapExternal');
+      btn?.addEventListener('click', () => {
+        state.mapExternalMode = !state.mapExternalMode;
+        state.mapExternalTarget = null;
+        btn.classList.toggle('on-map-ext', !!state.mapExternalMode);
+        document.querySelectorAll('.map-ext-pick').forEach(b => b.classList.remove('map-ext-pick'));
+        setStatus(state.mapExternalMode ? 'Map External: click a slider or button to learn' : 'Map External off');
+      });
+      const intercept = (e) => {
+        if (!state.mapExternalMode || suppressMapExternalIntercept) return;
+        const el = e.target && e.target.closest && e.target.closest('.cc-slider, button');
+        if (!isMappableTarget(el)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+        armMapExternalTarget(el);
+      };
+      document.addEventListener('pointerdown', intercept, true);
+      document.addEventListener('click', intercept, true);
+
+      document.getElementById('btnMidiMapClearAll')?.addEventListener('click', () => {
+        openConfirm('Clear all external MIDI mappings?', () => {
+          state.remoteMappings = {};
+          saveRemoteMappings();
+          renderMappingsTable();
+          setStatus('All external mappings cleared');
+        });
+      });
+      document.getElementById('raAbsBtn')?.addEventListener('click', () => setToastMode('absolute'));
+      document.getElementById('raRelBtn')?.addEventListener('click', () => setToastMode('relative'));
+      document.getElementById('raStepInput')?.addEventListener('change', (e) => {
+        const key = document.getElementById('mapRelAbsToast').dataset.key;
+        const m = state.remoteMappings[key];
+        if (!m) return;
+        m.step = Math.max(1, Math.min(20, parseInt(e.target.value, 10) || 1));
+        e.target.value = m.step;
+        saveRemoteMappings();
+      });
+      document.getElementById('raCloseBtn')?.addEventListener('click', () => {
+        document.getElementById('mapRelAbsToast').hidden = true;
+      });
+    }
+
+    function setToastMode(mode) {
+      const toast = document.getElementById('mapRelAbsToast');
+      const m = state.remoteMappings[toast.dataset.key];
+      if (!m) return;
+      m.mode = mode;
+      saveRemoteMappings();
+      updateRelAbsToastUI(m);
+      renderMappingsTable();
+    }
+    function updateRelAbsToastUI(m) {
+      document.getElementById('raAbsBtn').classList.toggle('on', m.mode === 'absolute');
+      document.getElementById('raRelBtn').classList.toggle('on', m.mode === 'relative');
+      document.getElementById('raStepWrap').hidden = m.mode !== 'relative';
+      document.getElementById('raStepInput').value = m.step || 1;
+    }
+    function showRelAbsToast(m) {
+      const toast = document.getElementById('mapRelAbsToast');
+      document.getElementById('mapRelAbsLabel').textContent = 'Mode for ' + m.control + ':';
+      toast.dataset.key = m.key;
+      toast.hidden = false;
+      updateRelAbsToastUI(m);
+    }
+
+    function currentControlValue(controlId, kind) {
+      const el = document.getElementById(controlId);
+      if (!el) return null;
+      if (kind === 'slider') return parseInt(el.value, 10) || 0;
+      if (kind === 'toggle') return el.classList.contains('on') ? 127 : 0;
+      return null;
+    }
+
+    function sendMappingFeedback(controlId, value) {
+      if (!state.midiAccess) return;
+      for (const key in state.remoteMappings) {
+        const m = state.remoteMappings[key];
+        if (m.control !== controlId || !m.feedbackOutputId) continue;
+        const roles = state.midiOutputRoles[m.feedbackOutputId];
+        if (!roles || !roles.remote) continue;
+        const out = state.midiAccess.outputs.get(m.feedbackOutputId);
+        if (!out) continue;
+        const statusByte = (m.type === 'cc' ? 0xB0 : 0x90) | ((m.channel - 1) & 0x0F);
+        try { out.send([statusByte, m.number, Math.max(0, Math.min(127, value | 0))]); } catch (_) {}
+      }
+    }
+
+    function applyRemoteMapping(m, value) {
+      const el = document.getElementById(m.control);
+      if (!el) return;
+      if (m.kind === 'slider') {
+        const cur = parseInt(el.value, 10) || 0;
+        let next;
+        if (m.mode === 'relative') {
+          const delta = (value - 64) * (m.step || 1);
+          next = cur + delta;
+        } else {
+          next = value;
+        }
+        next = Math.max(0, Math.min(127, next));
+        if (next === cur) return;
+        el.value = next;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      } else if (m.kind === 'toggle') {
+        const wantOn = value >= 64;
+        if (el.classList.contains('on') !== wantOn) {
+          suppressMapExternalIntercept = true;
+          el.click();
+          suppressMapExternalIntercept = false;
+        }
+      } else {
+        // Plain action button: fire once per rising edge (press), ignore
+        // releases entirely - matches a Twister button in Hold/momentary
+        // mode; a Toggle-mode Twister button will only fire this on the
+        // press that turns it on, not the one that turns it off.
+        const last = remoteEdgeState[m.key] || 0;
+        if (value >= 64 && last < 64) {
+          suppressMapExternalIntercept = true;
+          el.click();
+          suppressMapExternalIntercept = false;
+        }
+      }
+      remoteEdgeState[m.key] = value;
+    }
+
+    function logMidiIn(text) {
+      if (!text) return;
+      const entries = midiLog.entries;
+      entries.push({ time: midiLogTime(), text: '← ' + text });
+      if (entries.length > midiLog.max) entries.shift();
+      if (isMidiLogTabActive()) { renderMidiLogEntry(entries[entries.length - 1]); updateMidiLogCount(); }
+    }
+
+    function onExternalMidiMessage(portId, portName, e) {
+      const data = e.data;
+      if (!data || data.length < 2) return;
+      const status = data[0];
+      const hi = status & 0xF0;
+      if (hi !== 0xB0 && hi !== 0x90 && hi !== 0x80) return;
+      const channel = (status & 0x0F) + 1;
+      const msgClass = hi === 0xB0 ? 'cc' : 'note';
+      const number = data[1];
+      const value = hi === 0x80 ? 0 : (data[2] | 0);
+      const key = portId + '|' + channel + '|' + msgClass + '|' + number;
+
+      if (state.mapExternalMode && state.mapExternalTarget) {
+        // Learning: ignore note-off/CC-release-only noise as the trigger,
+        // a real press or turn is what we want to bind to.
+        if (msgClass === 'note' && hi !== 0x90) return;
+        const target = state.mapExternalTarget;
+        const el = document.getElementById(target.id);
+        const mapping = {
+          key, control: target.id, kind: target.kind, mode: 'absolute', step: 1,
+          portId, portName, channel, type: msgClass, number,
+          feedbackOutputId: findMatchingOutputId(portName)
+        };
+        state.remoteMappings[key] = mapping;
+        saveRemoteMappings();
+        const inputRoles = ensurePortRoles(state.midiInputRoles, portId);
+        if (!inputRoles.remote) { inputRoles.remote = true; saveMidiRoles(); }
+        if (mapping.feedbackOutputId) {
+          const outputRoles = ensurePortRoles(state.midiOutputRoles, mapping.feedbackOutputId);
+          if (!outputRoles.remote) { outputRoles.remote = true; saveMidiRoles(); }
+        }
+        el && el.classList.remove('map-ext-pick');
+        state.mapExternalTarget = null;
+        if (isMidiTabActive()) renderMidiTab();
+        setStatus('Learned: ' + target.id + ' ← ' + portName + ' ' + (msgClass === 'cc' ? 'CC' + number : 'Note ' + number) + ' ch' + channel);
+        if (mapping.kind === 'slider') showRelAbsToast(mapping);
+        const cur = currentControlValue(mapping.control, mapping.kind);
+        if (cur != null) sendMappingFeedback(mapping.control, cur);
+        return;
+      }
+
+      const roles = state.midiInputRoles[portId];
+      if (!roles || !roles.remote) return;
+      const m = state.remoteMappings[key];
+      if (!m) return;
+      logMidiIn(m.control + ' ' + (msgClass === 'cc' ? 'CC' + number : 'Note' + number) + ' = ' + value);
+      applyRemoteMapping(m, value);
+    }
+
+    function renderMidiTab() {
+      if (!state.midiAccess) {
+        const msg = '<div class="midi-port-empty">MIDI not available yet — Web MIDI failed, was denied, or hasn\'t finished asking permission. Try Refresh in the header MIDI cluster.</div>';
+        const inEl = document.getElementById('midiInputPorts');
+        const outEl = document.getElementById('midiOutputPorts');
+        if (inEl) inEl.innerHTML = msg;
+        if (outEl) outEl.innerHTML = msg;
+        renderMappingsTable();
+        return;
+      }
+      const inWrap = document.getElementById('midiInputPorts');
+      if (inWrap) {
+        inWrap.innerHTML = '';
+        for (const inp of state.midiAccess.inputs.values()) {
+          const roles = ensurePortRoles(state.midiInputRoles, inp.id);
+          const row = document.createElement('div');
+          row.className = 'midi-port-row';
+          row.innerHTML =
+            '<span class="midi-port-name">' + inp.name + '</span>' +
+            '<label class="midi-role-chk" title="Reserved for future note input recording - see Roadmap"><input type="checkbox" disabled> Track</label>' +
+            '<label class="midi-role-chk" title="Reserved for future external clock follow - see Roadmap"><input type="checkbox" disabled> Sync</label>' +
+            '<label class="midi-role-chk" title="Learn this port\'s CC/notes into app parameters via Map External"><input type="checkbox" data-role="remote"' + (roles.remote ? ' checked' : '') + '> Remote</label>';
+          row.querySelector('[data-role="remote"]').addEventListener('change', (ev) => {
+            roles.remote = ev.target.checked;
+            saveMidiRoles();
+            setStatus((roles.remote ? 'Listening to ' : 'Stopped listening to ') + inp.name + ' for external mappings');
+          });
+          inWrap.appendChild(row);
+        }
+        if (!state.midiAccess.inputs.size) inWrap.innerHTML = '<div class="midi-port-empty">No MIDI input ports detected.</div>';
+      }
+      const outWrap = document.getElementById('midiOutputPorts');
+      if (outWrap) {
+        outWrap.innerHTML = '';
+        for (const out of state.midiAccess.outputs.values()) {
+          const roles = ensurePortRoles(state.midiOutputRoles, out.id);
+          const isPrimary = !!(state.output && state.output.id === out.id);
+          const row = document.createElement('div');
+          row.className = 'midi-port-row';
+          row.innerHTML =
+            '<span class="midi-port-name">' + out.name + '</span>' +
+            '<label class="midi-role-chk" title="This port receives patterns, Program Change, CC, and clock/transport from the app"><input type="checkbox" data-role="track"' + (isPrimary ? ' checked' : '') + '> Track</label>' +
+            '<label class="midi-role-chk" title="Independent clock-only routing isn\'t built yet - Sync currently follows Track. See Roadmap: multi-destination clock output."><input type="checkbox" disabled' + (isPrimary ? ' checked' : '') + '> Sync</label>' +
+            '<label class="midi-role-chk" title="Send LED ring / button color feedback to this port for any control mapped via Map External"><input type="checkbox" data-role="remote"' + (roles.remote ? ' checked' : '') + '> Remote</label>';
+          row.querySelector('[data-role="track"]').addEventListener('change', (ev) => {
+            if (ev.target.checked) {
+              selectPort(out.id);
+              const sel = document.getElementById('midiPort');
+              if (sel) sel.value = out.id;
+              persistSession();
+              renderMidiTab();
+            } else {
+              ev.target.checked = true;
+            }
+          });
+          row.querySelector('[data-role="remote"]').addEventListener('change', (ev) => {
+            roles.remote = ev.target.checked;
+            saveMidiRoles();
+            setStatus((roles.remote ? 'Sending feedback to ' : 'Stopped feedback to ') + out.name);
+          });
+          outWrap.appendChild(row);
+        }
+        if (!state.midiAccess.outputs.size) outWrap.innerHTML = '<div class="midi-port-empty">No MIDI output ports detected.</div>';
+      }
+      renderMappingsTable();
+    }
+
+    function renderMappingsTable() {
+      const wrap = document.getElementById('midiMappingsList');
+      if (!wrap) return;
+      const keys = Object.keys(state.remoteMappings);
+      if (!keys.length) {
+        wrap.innerHTML = '<div class="midi-port-empty">No external mappings yet. Click "Map External" in the header, then click a slider or button.</div>';
+        return;
+      }
+      wrap.innerHTML = '';
+      keys.forEach(key => {
+        const m = state.remoteMappings[key];
+        const src = m.portName + ' · ' + (m.type === 'cc' ? 'CC' + m.number : 'Note' + m.number) + ' ch' + m.channel;
+        let modeHtml;
+        if (m.kind === 'slider') {
+          modeHtml =
+            '<select data-mode-key="' + key + '">' +
+              '<option value="absolute"' + (m.mode === 'absolute' ? ' selected' : '') + '>Absolute</option>' +
+              '<option value="relative"' + (m.mode === 'relative' ? ' selected' : '') + '>Relative</option>' +
+            '</select>' +
+            '<input type="number" min="1" max="20" value="' + (m.step || 1) + '" data-step-key="' + key + '" style="width:44px"' + (m.mode !== 'relative' ? ' hidden' : '') + '>';
+        } else {
+          modeHtml = '<span class="midi-map-kind">' + (m.kind === 'toggle' ? 'Toggle' : 'Momentary') + '</span>';
+        }
+        const row = document.createElement('div');
+        row.className = 'midi-map-row';
+        row.innerHTML =
+          '<span class="midi-map-control">' + m.control + '</span>' +
+          '<span class="midi-map-src">' + src + '</span>' +
+          '<span class="midi-map-mode">' + modeHtml + '</span>' +
+          '<button type="button" class="midi-map-clear" data-clear-key="' + key + '">Clear</button>';
+        wrap.appendChild(row);
+      });
+      wrap.querySelectorAll('[data-mode-key]').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const m = state.remoteMappings[sel.dataset.modeKey];
+          if (!m) return;
+          m.mode = sel.value;
+          saveRemoteMappings();
+          renderMappingsTable();
+        });
+      });
+      wrap.querySelectorAll('[data-step-key]').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const m = state.remoteMappings[inp.dataset.stepKey];
+          if (!m) return;
+          m.step = Math.max(1, Math.min(20, parseInt(inp.value, 10) || 1));
+          saveRemoteMappings();
+        });
+      });
+      wrap.querySelectorAll('[data-clear-key]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          delete state.remoteMappings[btn.dataset.clearKey];
+          saveRemoteMappings();
+          renderMappingsTable();
+          setStatus('Mapping cleared');
+        });
+      });
+    }
+
     function sendCC(cc, value) {
       if (state.clock && state.clock.recording && (cc === 90)) recordEvent({ kind: 'cc', cc: 90, val: value | 0 });
       const v = Math.max(0, Math.min(127, value | 0));
@@ -2141,6 +2622,7 @@
           if (String(v) === sl.dataset.sent) return;
           sl.dataset.sent = String(v);
           sendCC(parseInt(sl.dataset.cc, 10), v);
+          if (sl.id && typeof sendMappingFeedback === 'function') sendMappingFeedback(sl.id, v);
         });
         const applyNum = () => {
           let v = parseInt(inp.value, 10);
@@ -2151,6 +2633,7 @@
           if (String(v) === sl.dataset.sent) return;
           sl.dataset.sent = String(v);
           sendCC(parseInt(sl.dataset.cc, 10), v);
+          if (sl.id && typeof sendMappingFeedback === 'function') sendMappingFeedback(sl.id, v);
         };
         inp.addEventListener('focus', () => inp.select());
         inp.addEventListener('change', applyNum);
@@ -2187,7 +2670,7 @@
         div.className = 'control';
         div.style.flex = '1';
         div.innerHTML = `<label>B ${FILTER_FREQ[i][0]}<br>M ${FILTER_FREQ[i][1]}</label>
-          <input type="range" min="0" max="127" value="0" data-cc="${20 + i}" class="cc-slider" />
+          <input type="range" min="0" max="127" value="0" data-cc="${20 + i}" class="cc-slider" id="slider-cc-${20 + i}" />
           <input type="number" class="value-input" min="0" max="127" value="0" />`;
         fl.appendChild(div);
         bindSliderPair(div.querySelector('.cc-slider'), div.querySelector('.value-input'));
@@ -2201,6 +2684,7 @@
           const on = btn.classList.contains('on');
           const val = toggleMidiValue(cc, on);
           sendCC(cc, val);
+          if (btn.id) sendMappingFeedback(btn.id, on ? 127 : 0);
           if (cc === 89) state.clock.armed = on;
           if ([68, 85, 86, 87, 89].includes(cc)) recordEvent({ kind: 'cc', cc: cc, val: val });
           setStatus('CC' + cc + ' = ' + (on ? 'ON' : 'OFF'));
@@ -3548,11 +4032,12 @@
       }
       if (name === 'playlist' && typeof refreshPlaylistMenus === 'function') refreshPlaylistMenus();
       if (name === 'log' && typeof renderMidiLogAll === 'function') renderMidiLogAll();
+      if (name === 'midi' && typeof renderMidiTab === 'function') renderMidiTab();
       if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
 
     function cycleAppTab(dir) {
-      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist', 'log'];
+      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist', 'log', 'midi'];
       const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
       let i = order.indexOf(cur);
       if (i < 0) i = 0;
@@ -3579,7 +4064,7 @@
     function pageSections() {
       const tab = activeTab();
       const clockSec = { box: document.getElementById('clockCluster'), els: ['btnClockArm', 'btnPlay', 'btnClockStop', 'btnContinue', 'btnPauseAll', 'btnRecord', 'btnPlayClip', 'bpmBox', 'divSelect', 'btnResetLists'] };
-      const resetSec = { box: document.getElementById('resetCluster'), els: ['btnGlobalPatternReset', 'btnHaltPattern', 'btnStopPattern', 'btnGlobalClockReset', 'btnResetAll', 'btnMapMode', 'btnHelpHints'] };
+      const resetSec = { box: document.getElementById('resetCluster'), els: ['btnGlobalPatternReset', 'btnHaltPattern', 'btnStopPattern', 'btnGlobalClockReset', 'btnResetAll', 'btnMapMode', 'btnMapExternal', 'btnHelpHints'] };
       if (tab === 'main') {
         return [
           { box: document.getElementById('midiCluster'), els: ['midiPort', 'btnRefreshMidi', 'midiChannel'] },
@@ -3833,7 +4318,7 @@
       document.addEventListener('click', (e) => {
         if (!state.mapMode) return;
         const btn = e.target && e.target.closest && e.target.closest('button');
-        if (!btn || btn.id === 'btnMapMode' || btn.id === 'btnHelpHints') return;
+        if (!btn || btn.id === 'btnMapMode' || btn.id === 'btnMapExternal' || btn.id === 'btnHelpHints') return;
         if (!btn.id) return;
         e.preventDefault();
         e.stopPropagation();
@@ -6079,6 +6564,7 @@
       });
       initShortcuts();
       initMapAndHelp();
+      initMapExternal();
       initClock();
       initPlaylist();
       initMIDI().then(() => {

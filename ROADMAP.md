@@ -31,11 +31,19 @@ Not in strict priority order except where noted.
 - **MIDI CC sequencing.** Alongside note data, make the CC parameters on
   the main page sequenceable the same way (per-step values), not just
   playable live.
-- **External MIDI controller mapping.** Listen for incoming MIDI
-  CC/note from a connected controller and route it to app parameters/
-  controls - manual per-control mapping to start (DAW-style), possibly a
-  preset/"control surface script" model later for controllers with a
-  fixed, known layout.
+- ~~**External MIDI controller mapping.**~~ Done. "Map External" (header)
+  learns any connected MIDI controller's CC/notes into app sliders and
+  buttons, independent of the existing digit-key Map mode and active on
+  every tab. New MIDI tab lists Input/Output ports with Ableton-style
+  Track/Sync/Remote checkboxes (Track/Sync on inputs are placeholders for
+  now - no note/clock input feature uses them yet) plus a live mappings
+  table (per-mapping clear, and for continuous controls an absolute/
+  relative toggle with step size). LED/RGB feedback mirrors values back to
+  a Remote-enabled output whose name matches the learning input port (this
+  is how the MIDI Fighter Twister exposes itself - one strand, two ports).
+  Possible later add-on: a preset/"control surface script" model for
+  controllers with a fixed, known layout, so a Twister doesn't need to be
+  re-learned from scratch on a new machine.
 - **Gamepad mapping.** Map a game controller (Xbox Elite Series 2 named
   specifically) to app parameters via the browser's Gamepad API - buttons,
   sticks, and triggers are all readable; the paddles are the one part in
