@@ -1580,13 +1580,27 @@
       return null; // not one of the message types this log tracks
     }
     function logMidiOut(bytes) {
+      // Deliberately no DOM work here unless the Log tab is actually the one
+      // on screen. This runs inline inside midiSend(), on the same main
+      // thread the clock's requestAnimationFrame loop uses to schedule F8
+      // ticks - and that loop already treats a long-enough main-thread stall
+      // as "the clock disappeared" and quietly drops the backlog rather than
+      // bursting it out late (see startTimer()). Building/appending a DOM
+      // row and forcing a scroll-into-view on every single logged message,
+      // during a rapid burst of Program Changes, is exactly the kind of
+      // synchronous work that could cause that stall. Queuing to a plain
+      // array costs nothing comparable, so that's the only thing that runs
+      // unconditionally.
       const text = describeMidiOut(bytes);
       if (!text) return;
       const entries = midiLog.entries;
       entries.push({ time: midiLogTime(), text });
       if (entries.length > midiLog.max) entries.shift();
-      renderMidiLogEntry(entries[entries.length - 1]);
-      updateMidiLogCount();
+      if (isMidiLogTabActive()) { renderMidiLogEntry(entries[entries.length - 1]); updateMidiLogCount(); }
+    }
+    function isMidiLogTabActive() {
+      const v = document.getElementById('view-log');
+      return !!(v && v.classList.contains('active'));
     }
     function renderMidiLogEntry(entry) {
       const list = document.getElementById('midiLogList');
@@ -1600,6 +1614,17 @@
       row.querySelector('.m').textContent = entry.text;
       list.appendChild(row);
       list.scrollTop = list.scrollHeight;
+    }
+    function renderMidiLogAll() {
+      const list = document.getElementById('midiLogList');
+      if (!list) return;
+      if (!midiLog.entries.length) {
+        list.innerHTML = '<div class="empty">Nothing logged yet — this fills in as you use the app.</div>';
+      } else {
+        list.innerHTML = '';
+        midiLog.entries.forEach(renderMidiLogEntry);
+      }
+      updateMidiLogCount();
     }
     function updateMidiLogCount() {
       const el = document.getElementById('midiLogCount');
@@ -3492,6 +3517,7 @@
         setTimeout(() => window._fitGrid(state.visibleSteps || 64), 40);
       }
       if (name === 'playlist' && typeof refreshPlaylistMenus === 'function') refreshPlaylistMenus();
+      if (name === 'log' && typeof renderMidiLogAll === 'function') renderMidiLogAll();
       if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
 
