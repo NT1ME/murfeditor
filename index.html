@@ -5035,8 +5035,9 @@
 
     const PLAYLIST_KEY = 'murf-playlist-library';
     const LEGAL_SLOTS = [2,3,4,5,6,7,8,9,10,11,12,14,15,16,17,18,19,20,21,22,23,24];
-    function emptyPlRow() {
-      return { type: 'pattern', patternName: '', slot: 12, bars: 4 };
+    function emptyPlRow(_unused, i) {
+      const slot = (typeof i === 'number' && typeof chainSlotForRow === 'function') ? chainSlotForRow(i) : 12;
+      return { type: 'pattern', patternName: '', slot: slot, bars: 4 };
     }
     function emptyClipRow() {
       return { name: '', bars: 4 };
@@ -5044,7 +5045,7 @@
     function ensurePlRows() {
       const p = state.playlist;
       if (!p.rows || !p.rows.length) p.rows = Array.from({ length: 22 }, emptyPlRow);
-      while (p.rows.length < 22) p.rows.push(emptyPlRow());
+      while (p.rows.length < 22) p.rows.push(emptyPlRow(undefined, p.rows.length));
       if (!p.clipRows) p.clipRows = [];
       while (p.clipRows.length < 22) p.clipRows.push(emptyClipRow());
       if (p.clipCount == null) p.clipCount = 0;
@@ -5339,7 +5340,7 @@
       if (!box) return;
       box.innerHTML = '';
       for (let i = 0; i < p.rowCount; i++) {
-        const row = p.rows[i] || emptyPlRow();
+        const row = p.rows[i] || emptyPlRow(undefined, i);
         const div = document.createElement('div');
         div.className = 'pl-row'
           + (p.selectedRow === i ? ' selected' : '')
