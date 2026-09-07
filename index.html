@@ -1320,7 +1320,7 @@
         <div class="row" style="gap:12px; align-items:flex-start; flex-wrap:wrap">
           <div class="panel" style="flex:1; min-width:280px">
             <h2>Input ports</h2>
-            <p class="hint" style="margin-top:-6px">Remote turns a port's incoming CC/notes into external control mappings — click "Map External" in the header, then click a slider or button to bind it. Track and Sync are reserved for future note/clock input features (see Roadmap).</p>
+            <p class="hint" style="margin-top:-6px">Track enables everything for this port: Mute/Trigger/Sustain notes pass straight through to Keyboard/Stack automatically, and its CC/notes become learnable via "Map External" in the header (click it, then click a slider or button to bind it). Sync and Remote are reserved for future clock-follow and two-way control-surface use (see Roadmap).</p>
             <div id="midiInputPorts" class="midi-port-list"></div>
           </div>
           <div class="panel" style="flex:1; min-width:280px">
@@ -1330,9 +1330,19 @@
           </div>
         </div>
         <div class="panel" style="margin-top:12px">
-          <div class="row" style="justify-content:space-between; align-items:center">
+          <div class="row" style="justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px">
             <h2 style="margin:0">External mappings</h2>
-            <button type="button" id="btnMidiMapClearAll">Clear all mappings</button>
+            <div class="row" style="gap:8px; align-items:center">
+              <select id="midiMapLibrary" style="max-width:220px"><option value="">— saved mappings —</option></select>
+              <button type="button" id="btnMidiMapLoad">Load</button>
+              <button type="button" id="btnMidiMapSave">Save Current…</button>
+              <button type="button" id="btnMidiMapDelete">Delete</button>
+              <button type="button" id="btnMidiMapExport">Export .json</button>
+              <label id="btnMidiMapImport" class="import-btn">Import .json
+                <input type="file" id="midiMapImportFile" accept=".json,application/json" style="display:none" />
+              </label>
+              <button type="button" id="btnMidiMapClearAll">Clear all mappings</button>
+            </div>
           </div>
           <div id="midiMappingsList" class="midi-map-list"></div>
         </div>
@@ -1748,6 +1758,7 @@
     // mappings and port roles persist across reloads.
     const MIDI_ROLES_KEY = 'murf-midi-roles-v1';
     const REMOTE_MAP_KEY = 'murf-remote-map-v1';
+    const MIDI_MAP_LIBRARY_KEY = 'murf-midi-map-library-v1';
     const attachedInputIds = new Set();
     const remoteEdgeState = {}; // key -> last received value, for rising-edge detection on plain action buttons
     // While applyRemoteMapping fires a real el.click() to reuse a button's
@@ -1783,6 +1794,29 @@
         const raw = localStorage.getItem(REMOTE_MAP_KEY);
         if (raw) state.remoteMappings = JSON.parse(raw) || {};
       } catch (_) { state.remoteMappings = {}; }
+    }
+    // Named, standalone mapping presets - separate from the single "current"
+    // mapping table above, so a controller's whole knob/button layout can be
+    // saved, exported, and reloaded independent of any particular project.
+    function loadMidiMapLibrary() {
+      try { return JSON.parse(localStorage.getItem(MIDI_MAP_LIBRARY_KEY) || '{}'); } catch (_) { return {}; }
+    }
+    function writeMidiMapLibrary(lib) {
+      try { localStorage.setItem(MIDI_MAP_LIBRARY_KEY, JSON.stringify(lib)); } catch (_) {}
+    }
+    function refreshMidiMapLibrarySelect() {
+      const sel = document.getElementById('midiMapLibrary');
+      if (!sel) return;
+      const lib = loadMidiMapLibrary();
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">— saved mappings —</option>';
+      Object.keys(lib).sort().forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        sel.appendChild(opt);
+      });
+      if (cur && lib[cur]) sel.value = cur;
     }
     function ensurePortRoles(map, id) {
       if (!map[id]) map[id] = { track: false, sync: false, remote: false };
@@ -1874,6 +1908,71 @@
       document.getElementById('raCloseBtn')?.addEventListener('click', () => {
         document.getElementById('mapRelAbsToast').hidden = true;
       });
+
+      refreshMidiMapLibrarySelect();
+      document.getElementById('btnMidiMapLoad')?.addEventListener('click', () => {
+        const name = document.getElementById('midiMapLibrary').value;
+        if (!name) { setStatus('Pick a saved mapping set first'); return; }
+        const item = loadMidiMapLibrary()[name];
+        if (!item) return;
+        state.remoteMappings = JSON.parse(JSON.stringify(item.mappings || {}));
+        saveRemoteMappings();
+        renderMappingsTable();
+        setStatus('Loaded mapping set: ' + name);
+      });
+      document.getElementById('btnMidiMapSave')?.addEventListener('click', () => {
+        openNameModal('mapping-' + new Date().toISOString().slice(0, 10), (name) => {
+          if (!name) return;
+          const lib = loadMidiMapLibrary();
+          lib[name] = { mappings: state.remoteMappings };
+          writeMidiMapLibrary(lib);
+          refreshMidiMapLibrarySelect();
+          document.getElementById('midiMapLibrary').value = name;
+          setStatus('Saved mapping set: ' + name);
+        });
+      });
+      document.getElementById('btnMidiMapDelete')?.addEventListener('click', () => {
+        const name = document.getElementById('midiMapLibrary').value;
+        if (!name) { setStatus('Pick a saved mapping set first'); return; }
+        openConfirm('Delete saved mapping set “' + name + '”?', () => {
+          const lib = loadMidiMapLibrary();
+          delete lib[name];
+          writeMidiMapLibrary(lib);
+          refreshMidiMapLibrarySelect();
+          setStatus('Deleted mapping set: ' + name);
+        });
+      });
+      document.getElementById('btnMidiMapExport')?.addEventListener('click', () => {
+        const name = document.getElementById('midiMapLibrary').value;
+        const data = name ? loadMidiMapLibrary()[name] : { mappings: state.remoteMappings };
+        if (!data) return;
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = (name || 'murf-midi-mapping') + '.json';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setStatus('Exported mapping set' + (name ? ': ' + name : ' (current)'));
+      });
+      document.getElementById('midiMapImportFile')?.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const data = JSON.parse(reader.result);
+            const mappings = (data && data.mappings) || data;
+            state.remoteMappings = mappings || {};
+            saveRemoteMappings();
+            renderMappingsTable();
+            setStatus('Imported mapping set from ' + file.name);
+          } catch (err) {
+            setStatus('Bad mapping file (not JSON from Export)');
+          }
+        };
+        reader.readAsText(file);
+        e.target.value = '';
+      });
     }
 
     function setToastMode(mode) {
@@ -1911,10 +2010,17 @@
       if (!state.midiAccess) return;
       for (const key in state.remoteMappings) {
         const m = state.remoteMappings[key];
-        if (m.control !== controlId || !m.feedbackOutputId) continue;
-        const roles = state.midiOutputRoles[m.feedbackOutputId];
+        if (m.control !== controlId) continue;
+        // Resolved by name every time rather than trusting a stored output
+        // id - ids aren't stable across reconnects/reloads/machines, but a
+        // Twister-style controller's input and output ports keep the same
+        // name, so that's the only durable link between "learned from this
+        // input" and "send feedback to this output".
+        const outputId = findMatchingOutputId(m.portName);
+        if (!outputId) continue;
+        const roles = state.midiOutputRoles[outputId];
         if (!roles || !roles.remote) continue;
-        const out = state.midiAccess.outputs.get(m.feedbackOutputId);
+        const out = state.midiAccess.outputs.get(outputId);
         if (!out) continue;
         const statusByte = (m.type === 'cc' ? 0xB0 : 0x90) | ((m.channel - 1) & 0x0F);
         try { out.send([statusByte, m.number, Math.max(0, Math.min(127, value | 0))]); } catch (_) {}
@@ -1977,7 +2083,10 @@
       const msgClass = hi === 0xB0 ? 'cc' : 'note';
       const number = data[1];
       const value = hi === 0x80 ? 0 : (data[2] | 0);
-      const key = portId + '|' + channel + '|' + msgClass + '|' + number;
+      // Keyed by port *name*, not the browser-assigned port id - ids churn
+      // across reloads, replugs, and definitely across machines, but a
+      // mapping needs to survive all of that once it's exportable/savable.
+      const key = portName + '|' + channel + '|' + msgClass + '|' + number;
 
       if (state.mapExternalMode && state.mapExternalTarget) {
         // Learning: ignore note-off/CC-release-only noise as the trigger,
@@ -1987,15 +2096,15 @@
         const el = document.getElementById(target.id);
         const mapping = {
           key, control: target.id, kind: target.kind, mode: 'absolute', step: 1,
-          portId, portName, channel, type: msgClass, number,
-          feedbackOutputId: findMatchingOutputId(portName)
+          portName, channel, type: msgClass, number
         };
         state.remoteMappings[key] = mapping;
         saveRemoteMappings();
         const inputRoles = ensurePortRoles(state.midiInputRoles, portId);
-        if (!inputRoles.remote) { inputRoles.remote = true; saveMidiRoles(); }
-        if (mapping.feedbackOutputId) {
-          const outputRoles = ensurePortRoles(state.midiOutputRoles, mapping.feedbackOutputId);
+        if (!inputRoles.track) { inputRoles.track = true; saveMidiRoles(); }
+        const feedbackOutputId = findMatchingOutputId(portName);
+        if (feedbackOutputId) {
+          const outputRoles = ensurePortRoles(state.midiOutputRoles, feedbackOutputId);
           if (!outputRoles.remote) { outputRoles.remote = true; saveMidiRoles(); }
         }
         el && el.classList.remove('map-ext-pick');
@@ -2009,7 +2118,19 @@
       }
 
       const roles = state.midiInputRoles[portId];
-      if (!roles || !roles.remote) return;
+      if (!roles || !roles.track) return;
+
+      // Mute/Trigger/Sustain performance notes always pass straight through
+      // to the Keyboard/Stack engine using the app's fixed note ranges -
+      // no per-note learn step, and these 24 notes are never available for
+      // Map External's generic CC/note learning below.
+      if (msgClass === 'note' && modeOfNote(number) != null) {
+        const heldKey = 'ext:' + portId + ':' + number;
+        if (hi === 0x90 && value > 0) performExternalNoteOn(number, heldKey);
+        else performExternalNoteOff(heldKey);
+        return;
+      }
+
       const m = state.remoteMappings[key];
       if (!m) return;
       logMidiIn(m.control + ' ' + (msgClass === 'cc' ? 'CC' + number : 'Note' + number) + ' = ' + value);
@@ -2035,13 +2156,13 @@
           row.className = 'midi-port-row';
           row.innerHTML =
             '<span class="midi-port-name">' + inp.name + '</span>' +
-            '<label class="midi-role-chk" title="Reserved for future note input recording - see Roadmap"><input type="checkbox" disabled> Track</label>' +
+            '<label class="midi-role-chk" title="Enables this port for Map External - Mute/Trigger/Sustain notes pass straight through to Keyboard/Stack, and its CC/notes become learnable"><input type="checkbox" data-role="track"' + (roles.track ? ' checked' : '') + '> Track</label>' +
             '<label class="midi-role-chk" title="Reserved for future external clock follow - see Roadmap"><input type="checkbox" disabled> Sync</label>' +
-            '<label class="midi-role-chk" title="Learn this port\'s CC/notes into app parameters via Map External"><input type="checkbox" data-role="remote"' + (roles.remote ? ' checked' : '') + '> Remote</label>';
-          row.querySelector('[data-role="remote"]').addEventListener('change', (ev) => {
-            roles.remote = ev.target.checked;
+            '<label class="midi-role-chk" title="Not required for mapping - mapping and note passthrough are controlled by Track. Reserved for future two-way control-surface use"><input type="checkbox" disabled> Remote</label>';
+          row.querySelector('[data-role="track"]').addEventListener('change', (ev) => {
+            roles.track = ev.target.checked;
             saveMidiRoles();
-            setStatus((roles.remote ? 'Listening to ' : 'Stopped listening to ') + inp.name + ' for external mappings');
+            setStatus((roles.track ? 'Listening to ' : 'Stopped listening to ') + inp.name + ' for external mappings');
           });
           inWrap.appendChild(row);
         }
@@ -2081,6 +2202,7 @@
         if (!state.midiAccess.outputs.size) outWrap.innerHTML = '<div class="midi-port-empty">No MIDI output ports detected.</div>';
       }
       renderMappingsTable();
+      refreshMidiMapLibrarySelect();
     }
 
     function renderMappingsTable() {
@@ -3669,6 +3791,33 @@
       setStatus('Latch ' + (state.latch ? 'on' : 'off'));
     }
 
+    // External note passthrough (Map External's Track role): a Mute/Trigger/
+    // Sustain note arriving from a Track-enabled input drives the same
+    // perfHeld/perfLatched/stealBand machinery as a computer-keyboard key
+    // press in initPerfComputerKeys() below, just keyed by "which physical
+    // MIDI note from which port" instead of "which computer key" - and,
+    // unlike the computer-keyboard handler, not gated to the Keyboard/Stack
+    // tab being on screen.
+    function performExternalNoteOn(note, heldKey) {
+      const mode = modeOfNote(note);
+      if (mode == null || perfHeld.has(heldKey)) return;
+      const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+      if (canLatch && perfLatched.has(note)) { releaseNote(note); return; }
+      stealBand(note);
+      perfHeld.set(heldKey, { note, mode });
+      sendNoteOn(note, 100);
+      if (canLatch) perfLatched.add(note);
+      document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => el.classList.add('active'));
+    }
+    function performExternalNoteOff(heldKey) {
+      if (!perfHeld.has(heldKey)) return;
+      const { note, mode } = perfHeld.get(heldKey);
+      perfHeld.delete(heldKey);
+      const canLatch = state.latch && (mode === 'mute' || mode === 'sustained');
+      if (canLatch && perfLatched.has(note)) return;
+      releaseNote(note);
+    }
+
     function initPerfComputerKeys() {
       document.getElementById('btnLatch')?.addEventListener('click', toggleLatch);
       document.getElementById('btnStackLatch')?.addEventListener('click', toggleLatch);
@@ -4897,7 +5046,10 @@
           playlist: (typeof snapshotPlaylist === 'function') ? snapshotPlaylist() : null,
           digits: loadDigitMap(),
           divBank: state.clock.bank || 0,
-          customDivs: (state.clock.customDivs || defaultCustomDivs()).slice()
+          customDivs: (state.clock.customDivs || defaultCustomDivs()).slice(),
+          remoteMappings: state.remoteMappings,
+          midiInputRoles: state.midiInputRoles,
+          midiOutputRoles: state.midiOutputRoles
         };
       }
       function applyProject(p) {
@@ -4925,6 +5077,16 @@
         try { if (p.library) localStorage.setItem('murf-pattern-library', JSON.stringify(p.library)); } catch (e) { errs.push('library'); }
         try { if (p.rows) localStorage.setItem('murf-rows', JSON.stringify(p.rows)); } catch (e) { errs.push('rows'); }
         try { if (p.digits) { writeDigitMap(p.digits); applyKbdHints(); } } catch (e) { errs.push('digits'); }
+        try {
+          if (p.remoteMappings) state.remoteMappings = p.remoteMappings;
+          if (p.midiInputRoles) state.midiInputRoles = p.midiInputRoles;
+          if (p.midiOutputRoles) state.midiOutputRoles = p.midiOutputRoles;
+          if (p.remoteMappings || p.midiInputRoles || p.midiOutputRoles) {
+            saveRemoteMappings();
+            saveMidiRoles();
+            if (isMidiTabActive()) renderMidiTab();
+          }
+        } catch (e) { errs.push('midi mappings'); }
         try {
           if (p.customDivs && p.customDivs.length === 10) state.clock.customDivs = p.customDivs.slice();
           if (p.divBank != null) state.clock.bank = p.divBank;
