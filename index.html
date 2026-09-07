@@ -5687,27 +5687,17 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        if (!fromStart) {
-          // Continue: rowIndex/patternTick weren't reset above (this is a
-          // resume, not a fresh Start), so re-send Program Change for
-          // whatever row we're actually resuming on - the tick-driven
-          // row-change logic in playlistOnTick() only fires when the row
-          // index CHANGES, so it won't do this on its own.
-          const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-          enterPlaylistRow(hit ? hit.i : 0);
-        }
-        // fromStart: deliberately does NOT send a Program Change here, and
-        // Start doesn't send one anywhere else either - Start is just Start.
-        // Set Chain already parked row 0's slot with one bare Program
-        // Change, once, right after its dumps finished. Trust that: it's
-        // not racing anything (nothing async happens after that park), and
-        // re-asserting it here would tether a Program Change to the Start
-        // control again, which is exactly what this is meant to avoid. If
-        // anything nudges the device's pattern selection between Set Chain
-        // and pressing Play, the fix is to press Set Chain again before
-        // Play, not to have Start double-check it.
-        // Don't resend it here; that would put a second PC right after
-        // Start instead of only before it.
+        // Neither Start nor Continue sends a Program Change here. The
+        // MuRF holds its own pattern selection across Stop/Continue same
+        // as any MIDI device would - Continue's job is just resuming the
+        // clock, not reasserting what's already selected. Set Chain is
+        // the only thing that ever parks a row via Program Change (once,
+        // right after its dumps finish); a chain performance otherwise
+        // shouldn't touch anything but the band-level faders on the
+        // hardware, so there's nothing external for Continue to correct
+        // for. The tick-driven row-change logic in playlistOnTick() still
+        // sends a fresh Program Change the moment a row boundary is
+        // actually crossed, same as always.
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
