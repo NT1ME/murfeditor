@@ -5687,22 +5687,18 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        // Re-send the current row's Program Change here, after Start/
-        // Continue's own byte already went out above in clockPlay() - not
-        // before it, not simultaneous with it. This was removed once on
-        // the theory that Set Chain's own park (sent once, while stopped,
-        // right after its dumps finish) would be enough on its own, since
-        // nothing async races it anymore. Real-hardware tests said
-        // otherwise: three separate takes all showed the SAME pattern -
-        // the Program Change parked while the MuRF was stopped often
-        // didn't actually take effect, while every Program Change sent
-        // once the clock was already running did, reliably. So the MuRF
-        // appears not to fully commit a Program Change until its pattern
-        // clock is actually ticking - Set Chain's park alone can't be
-        // trusted, and this re-assertion is what actually gets row 0 (or
-        // whatever row Continue is resuming on) to stick.
-        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-        enterPlaylistRow(hit ? hit.i : 0);
+        // Neither Start nor Continue sends a Program Change here - tried
+        // resending one right after Start/Continue to cover for Set
+        // Chain's park occasionally not sticking, but real-hardware tests
+        // showed it didn't reliably fix that (still failed some starts)
+        // AND correlated with the return of the double-pause/clock-desync
+        // symptom that was completely absent in sessions without it. Not
+        // worth trading a real cost for a fix that doesn't consistently
+        // work. Row 0 is always slot 2 by design; if Set Chain's park
+        // doesn't stick on a given run, the tick-driven row-change logic
+        // in playlistOnTick() still reliably corrects it at the very next
+        // row boundary - a much smaller cost than a chronically unsynced
+        // clock.
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
