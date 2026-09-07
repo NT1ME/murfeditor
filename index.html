@@ -5634,19 +5634,29 @@
         p.primedSlot = firstSlot;
         p.rowIndex = 0;
         p.patternTick = 0;
-        // Just a bare Program Change to park on the first row's slot - no
-        // Halt, no Pattern Reset. Every Chain failure traced this session
-        // came from that CC20/CC90 pair (CC90 in particular gets deferred
-        // to "the next synchronized beat" instead of applying instantly
-        // when the MuRF is still clock-synced) - never from the Program
-        // Change alone, which held up under every stress test we ran, sync
-        // or no sync. Switching between already-dumped patterns only ever
-        // needs Program Change; clockPlay() sends this same one again,
-        // still ahead of the Start byte, right when Play is pressed.
-        pcToSlot(firstSlot);
+        // No Program Change here at all now - isolating test. Two clean,
+        // directly-contrasted real-hardware sessions this round: Set
+        // Chain's dump+park run against an UNHALTED MuRF (just free-
+        // running, unsynced) came back perfect - zero double-pauses across
+        // four Stop/Continue cycles, row 1 correct, clean loop wrap. The
+        // exact same routine run against a HALTED MuRF (CC20 already sent
+        // by an earlier Pause, never cleared before Set Chain) broke MIDI
+        // again, full bypass required. The one thing that changed between
+        // those two runs was whether the device was halted when Set
+        // Chain's dump + park Program Change arrived - so now we're
+        // isolating further: does the SysEx dump alone (with NO Program
+        // Change riding along) still cause trouble sent into a halted
+        // MuRF, or is Program Change specifically the trigger? Row 0 is
+        // always slot 2 by convention; without a park PC here, nothing
+        // asserts that at Set Chain time - the expectation is the MuRF is
+        // manually put on slot 2 beforehand, and the existing tick-driven
+        // row-change logic in playlistOnTick() will still send a real
+        // Program Change the moment the chain actually advances past row
+        // 0, loop wrap included - it already only fires on a real row
+        // index change, so this needed no changes on its own.
         setFollow(false);
         updateChainChrome();
-        setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
+        setStatus('Chain set — ' + jobs.length + ' slot' + (jobs.length === 1 ? '' : 's') + ' dumped, no park sent. Put the MuRF on slot ' + firstSlot + ' yourself, then press Play.');
       });
     }
     function dropChain(reason) {
