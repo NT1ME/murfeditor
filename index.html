@@ -1848,10 +1848,11 @@
       }
     }
 
+    const MAP_EXTERNAL_EXCLUDED_IDS = new Set(['btnMapMode', 'btnMapExternal', 'btnHelpHints', 'raAbsBtn', 'raRelBtn', 'raCloseBtn']);
     function isMappableTarget(el) {
       if (!el || !el.id) return false;
       if (el.tagName === 'INPUT' && el.type === 'range' && el.classList.contains('cc-slider')) return true;
-      if (el.tagName === 'BUTTON' && el.id !== 'btnMapMode' && el.id !== 'btnMapExternal' && el.id !== 'btnHelpHints') return true;
+      if (el.tagName === 'BUTTON' && !MAP_EXTERNAL_EXCLUDED_IDS.has(el.id)) return true;
       return false;
     }
     function targetKind(el) {
@@ -4467,7 +4468,7 @@
       document.addEventListener('click', (e) => {
         if (!state.mapMode) return;
         const btn = e.target && e.target.closest && e.target.closest('button');
-        if (!btn || btn.id === 'btnMapMode' || btn.id === 'btnMapExternal' || btn.id === 'btnHelpHints') return;
+        if (!btn || MAP_EXTERNAL_EXCLUDED_IDS.has(btn.id)) return;
         if (!btn.id) return;
         e.preventDefault();
         e.stopPropagation();
