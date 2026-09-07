@@ -1680,11 +1680,11 @@
     }
     function resetAll() {
       clockStopDevice();
-      haltPattern();
       stopClipPlayback();
       midiPanic();
       state.clock.seqStep = 0;
       state.clock.playClip = false;
+      let parkingChain = false;
       if (state.playlist) {
         state.playlist.running = false;
         state.playlist.clipRunning = false;
@@ -1695,12 +1695,22 @@
         state.playlist.armedRow = null;
         if (state.playlist.setChain && state.playlist.rowCount) {
           const slot = (typeof rowDestSlot === 'function') ? rowDestSlot(0) : null;
-          // midiPanic() just scheduled 73 note-offs spaced 2ms apart (~146ms) via
-          // timestamped output.send() calls; Web MIDI transmits by timestamp, not
-          // call order, so an un-timestamped send here could jump ahead of them.
-          if (slot != null) setTimeout(() => pcToSlot(slot), 160);
+          if (slot != null) {
+            parkingChain = true;
+            // midiPanic() just scheduled 73 note-offs spaced 2ms apart (~146ms)
+            // via timestamped output.send() calls; Web MIDI transmits by
+            // timestamp, not call order, so an un-timestamped send here could
+            // jump ahead of them. Program Change has to land before Halt, not
+            // after - CC20 only clears on Rate change, Rate CV, or MIDI Start/
+            // Continue, never on Program Change, and sending a PC into an
+            // already-halted MuRF is exactly the sequence that's broken MIDI
+            // outright elsewhere this session. So Halt moves into this same
+            // delayed callback, right after the PC, instead of firing first.
+            setTimeout(() => { pcToSlot(slot); haltPattern(); }, 160);
+          }
         }
       }
+      if (!parkingChain) haltPattern();
       flashBtn('btnResetAll');
       setStatus('Reset all');
       updatePlayheads();
