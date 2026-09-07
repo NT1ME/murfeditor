@@ -575,6 +575,12 @@
       color: var(--text-dim);
       margin-right: 2px;
     }
+    .step-readout {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+      height: 14px;
+    }
     .grid-wrap {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
@@ -1060,6 +1066,7 @@
           </div>
         </div>
 
+        <div id="stepReadout" class="step-readout">Step 1</div>
         <div class="grid-wrap">
           <div class="grid" id="patternGrid"></div>
         </div>
@@ -1882,11 +1889,23 @@
       }
     }
 
+    function setStepReadout(step) {
+      const el = document.getElementById('stepReadout');
+      if (el) el.textContent = 'Step ' + step;
+    }
+    function updateStepReadoutFromCaret() {
+      setStepReadout(state.focusedStep || 1);
+    }
     function renderGridCells() {
       const grid = document.getElementById('patternGrid');
       grid.innerHTML = '';
       const vis = state.visibleSteps || 64;
       grid.style.gridTemplateColumns = `86px repeat(${vis}, var(--cell))`;
+      if (!grid.dataset.hoverBound) {
+        grid.dataset.hoverBound = '1';
+        grid.addEventListener('pointerleave', updateStepReadoutFromCaret);
+      }
+      updateStepReadoutFromCaret();
 
       const corner = document.createElement('div');
       corner.className = 'grid-label corner';
@@ -1947,6 +1966,7 @@
             cell.appendChild(grip);
           }
           cell.addEventListener('pointerdown', onCellPointer);
+          cell.addEventListener('pointerenter', () => setStepReadout(s));
           grid.appendChild(cell);
         }
       }
