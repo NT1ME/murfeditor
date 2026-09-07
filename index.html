@@ -4154,29 +4154,6 @@
       if (state.clock.timer) { clearInterval(state.clock.timer); state.clock.timer = null; }
       if (state.clock.raf) { cancelAnimationFrame(state.clock.raf); state.clock.raf = null; }
     }
-    function chainParkBeforeStart() {
-      // Send the Program Change for a fresh Chain start (always row 0)
-      // before the Start byte goes out, not after and not at the same
-      // instant. We've never cleanly tested "PC essentially simultaneous
-      // with Start" in isolation, and there's a strictly safer option that
-      // costs nothing: park on the row while the transport is provably
-      // still stopped, exactly like Set Chain's own park - which has never
-      // once been implicated in a failure - then let Start go out on its
-      // own, racing nothing.
-      const p = state.playlist;
-      if (p.mode !== 'chain' || !p.setChain || !p.rowCount) return;
-      if (!playlistRowsReady() || !state.output) return;
-      if (dumpQueueBusy) {
-        // Set Chain's dump is still in flight - p.setChain would only be
-        // true from a PREVIOUS Set Chain here, so proceeding would park on
-        // a stale chain while fresh dumps for a new one are still landing.
-        // Say so plainly instead of silently falling back to normal
-        // playback the way this used to.
-        setStatus('Dumps still sending — wait, then press Play again');
-        return;
-      }
-      enterPlaylistRow(0);
-    }
     function clockPlay(fromStart) {
       const c = state.clock;
       armClockOn();
@@ -4187,7 +4164,6 @@
         c.halted = false;
         c.origin = performance.now();
         c.f8Sent = 0;
-        chainParkBeforeStart();
       } else {
         c.halted = false;
         const tickMs = 60000 / Math.max(20, c.bpm || 120) / 24;
@@ -5720,8 +5696,16 @@
           const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
           enterPlaylistRow(hit ? hit.i : 0);
         }
-        // fromStart: row 0's Program Change already went out in
-        // chainParkBeforeStart(), before the Start byte - see clockPlay().
+        // fromStart: deliberately does NOT send a Program Change here, and
+        // Start doesn't send one anywhere else either - Start is just Start.
+        // Set Chain already parked row 0's slot with one bare Program
+        // Change, once, right after its dumps finished. Trust that: it's
+        // not racing anything (nothing async happens after that park), and
+        // re-asserting it here would tether a Program Change to the Start
+        // control again, which is exactly what this is meant to avoid. If
+        // anything nudges the device's pattern selection between Set Chain
+        // and pressing Play, the fix is to press Set Chain again before
+        // Play, not to have Start double-check it.
         // Don't resend it here; that would put a second PC right after
         // Start instead of only before it.
       }
