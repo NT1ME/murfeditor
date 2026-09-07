@@ -5687,17 +5687,22 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        // Neither Start nor Continue sends a Program Change here. The
-        // MuRF holds its own pattern selection across Stop/Continue same
-        // as any MIDI device would - Continue's job is just resuming the
-        // clock, not reasserting what's already selected. Set Chain is
-        // the only thing that ever parks a row via Program Change (once,
-        // right after its dumps finish); a chain performance otherwise
-        // shouldn't touch anything but the band-level faders on the
-        // hardware, so there's nothing external for Continue to correct
-        // for. The tick-driven row-change logic in playlistOnTick() still
-        // sends a fresh Program Change the moment a row boundary is
-        // actually crossed, same as always.
+        // Re-send the current row's Program Change here, after Start/
+        // Continue's own byte already went out above in clockPlay() - not
+        // before it, not simultaneous with it. This was removed once on
+        // the theory that Set Chain's own park (sent once, while stopped,
+        // right after its dumps finish) would be enough on its own, since
+        // nothing async races it anymore. Real-hardware tests said
+        // otherwise: three separate takes all showed the SAME pattern -
+        // the Program Change parked while the MuRF was stopped often
+        // didn't actually take effect, while every Program Change sent
+        // once the clock was already running did, reliably. So the MuRF
+        // appears not to fully commit a Program Change until its pattern
+        // clock is actually ticking - Set Chain's park alone can't be
+        // trusted, and this re-assertion is what actually gets row 0 (or
+        // whatever row Continue is resuming on) to stick.
+        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
+        enterPlaylistRow(hit ? hit.i : 0);
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
