@@ -4154,6 +4154,29 @@
       if (state.clock.timer) { clearInterval(state.clock.timer); state.clock.timer = null; }
       if (state.clock.raf) { cancelAnimationFrame(state.clock.raf); state.clock.raf = null; }
     }
+    function chainParkBeforeStart() {
+      // Send the Program Change for a fresh Chain start (always row 0)
+      // before the Start byte goes out, not after and not at the same
+      // instant. We've never cleanly tested "PC essentially simultaneous
+      // with Start" in isolation, and there's a strictly safer option that
+      // costs nothing: park on the row while the transport is provably
+      // still stopped, exactly like Set Chain's own park - which has never
+      // once been implicated in a failure - then let Start go out on its
+      // own, racing nothing.
+      const p = state.playlist;
+      if (p.mode !== 'chain' || !p.setChain || !p.rowCount) return;
+      if (!playlistRowsReady() || !state.output) return;
+      if (dumpQueueBusy) {
+        // Set Chain's dump is still in flight - p.setChain would only be
+        // true from a PREVIOUS Set Chain here, so proceeding would park on
+        // a stale chain while fresh dumps for a new one are still landing.
+        // Say so plainly instead of silently falling back to normal
+        // playback the way this used to.
+        setStatus('Dumps still sending — wait, then press Play again');
+        return;
+      }
+      enterPlaylistRow(0);
+    }
     function clockPlay(fromStart) {
       const c = state.clock;
       armClockOn();
@@ -4164,6 +4187,7 @@
         c.halted = false;
         c.origin = performance.now();
         c.f8Sent = 0;
+        chainParkBeforeStart();
       } else {
         c.halted = false;
         const tickMs = 60000 / Math.max(20, c.bpm || 120) / 24;
@@ -5599,14 +5623,9 @@
       if (!p.rowCount) { setStatus('Set a row count'); return; }
       if (!playlistRowsReady()) { setStatus('Every row must be Pattern, Rest, EQ Bass, or EQ Mids'); return; }
       if (state.clock.running) {
-        // Actually tell the hardware to Stop, not just kill our own JS
-        // timer. Without this the MuRF still believes it's MIDI-synced,
-        // and per the firmware addendum a CC90 Pattern Reset sent while
-        // synced is deferred to "the next synchronized beat" instead of
-        // applying instantly - a beat that never arrives here since we've
-        // silently stopped sending clock. That leaves the park below
-        // (Halt + CC90) racing an unresolved reset, which only resolves
-        // whenever the next Start's clock ticks happen to reach it.
+        // Stop the transport before dumping - we're about to overwrite the
+        // pattern slots' memory, which shouldn't happen while the MuRF is
+        // actively cycling through patterns via MIDI clock.
         clockStopDevice();
       }
       const jobs = [];
@@ -5639,9 +5658,16 @@
         p.primedSlot = firstSlot;
         p.rowIndex = 0;
         p.patternTick = 0;
+        // Just a bare Program Change to park on the first row's slot - no
+        // Halt, no Pattern Reset. Every Chain failure traced this session
+        // came from that CC20/CC90 pair (CC90 in particular gets deferred
+        // to "the next synchronized beat" instead of applying instantly
+        // when the MuRF is still clock-synced) - never from the Program
+        // Change alone, which held up under every stress test we ran, sync
+        // or no sync. Switching between already-dumped patterns only ever
+        // needs Program Change; clockPlay() sends this same one again,
+        // still ahead of the Start byte, right when Play is pressed.
         pcToSlot(firstSlot);
-        haltPattern();
-        sendCC(90, 127);
         setFollow(false);
         updateChainChrome();
         setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
@@ -5685,21 +5711,19 @@
         p.running = true;
         p.seqHalted = false;
         setFollow(false);
-        // Re-issue the Program Change for the current row on every Play,
-        // including a fresh Start - not just Continue. Set Chain already
-        // sent PC to the first row's slot once, while the transport was
-        // stopped, but that's the only PC the hardware would ever see for
-        // row 0 without this: the tick-driven row-change logic in
-        // playlistOnTick() only fires when the row index CHANGES, and on a
-        // fresh Start rowIndex is already reset to 0 above, so it never
-        // sees a change and never re-sends PC. If that first PC didn't
-        // stick (sent while stopped, or anything else nudged the device's
-        // pattern selection in the meantime), Start would just keep
-        // playing whatever pattern was already active instead of the
-        // chain's first row - which is exactly the "chain sends data but
-        // the old pattern is what plays" symptom this fixes.
-        const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
-        enterPlaylistRow(hit ? hit.i : 0);
+        if (!fromStart) {
+          // Continue: rowIndex/patternTick weren't reset above (this is a
+          // resume, not a fresh Start), so re-send Program Change for
+          // whatever row we're actually resuming on - the tick-driven
+          // row-change logic in playlistOnTick() only fires when the row
+          // index CHANGES, so it won't do this on its own.
+          const hit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick || 0, 'bars');
+          enterPlaylistRow(hit ? hit.i : 0);
+        }
+        // fromStart: row 0's Program Change already went out in
+        // chainParkBeforeStart(), before the Start byte - see clockPlay().
+        // Don't resend it here; that would put a second PC right after
+        // Start instead of only before it.
       }
       if (wantClips) p.clipRunning = true;
       firePlaylistClips();
