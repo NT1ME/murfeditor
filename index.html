@@ -6297,8 +6297,10 @@
     // hasn't even fired once), so the MuRF has no live MIDI clock to
     // attach a division to - functionally not so different from sending it
     // into a stopped device. This delay gives real ticks time to actually
-    // flow before CC9 arrives; 200ms is a first attempt, not a measured
-    // value - revisit if it doesn't hold up.
+    // flow before CC9 arrives. 200ms was a first attempt, since confirmed
+    // on real hardware across a cold start (no manual pre-play) ending on
+    // both Halt and Pause All, and a manually-changed Division carried
+    // through Set Chain and Pause All - all held the right division.
     const DIVISION_LOCK_DELAY_MS = 200;
     let setChainBusy = false;
     function setChainNow() {
