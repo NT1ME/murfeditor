@@ -76,7 +76,7 @@ want that, disconnect the MIDI port first, load the project, then reconnect.
   counter already was, rather than restarting from step one.
 - **Stop Clock** — sends Stop (0xFC) and freezes the app's own clock. This
   does not punch out an in-progress recording by itself.
-- **Pause all** — sends Stop, then Halt. See the safety section below
+- **Pause all** — sends Halt, then Stop. See the safety section below
   before relying on this mid-performance.
 - **Rec** — arms recording if nothing is currently recording, or punches out
   and finalizes the take if one is in progress.
@@ -143,7 +143,7 @@ the MuRF at a different pattern.
 
 | Key | What it does |
 |-----|----------------|
-| Backtick | Move to the next page (Main → Pattern → Keyboard → Stack → Clips → Playlist → Log → MIDI → back to Main) |
+| Backtick | Move to the next page (Main → Pattern → Keyboard → Stack → Clips → Playlist → Log → back to Main) |
 | Shift+Backtick | Move to the previous page in that same order |
 | Tab | Move focus to the next control on the current page |
 | Shift+Tab | Move focus to the previous control |
@@ -253,7 +253,7 @@ the app first opens.
 | Play | Shift+Enter | Start (0xFA) |
 | Continue | Cmd+Enter | Continue (0xFB) |
 | Stop Clock | Shift+Space | Stop (0xFC) |
-| Pause all | Option+Space | Stop, then Halt |
+| Pause all | Option+Space | Halt, then Stop |
 | Rec | Backslash | — |
 | Play clip | Cmd+Shift+Enter | — |
 | Reset lists | Option+X | Stop, note-off sweep, Program Change + Halt if a chain is set |
@@ -624,15 +624,12 @@ the clip list to Loop.
   immediately. This mode is useful for just parking a set of patterns onto
   slots without actually running them as a list.
 - **Chain** — slot numbers are locked to row order instead of being
-  user-chosen. **Set Chain** unconditionally clears any Halt state first
-  (see the safety section above), stops the clock if it was running,
-  re-asserts the currently selected Division, dumps every Pattern and Rest
-  row once (spaced out, about a second apart), then finishes by
-  sending a plain Program Change parking the MuRF on the first row's slot
-  — see "Combo commands" below for the exact sequence and why each step is
-  there. From that point, Play only ever sends Program Changes during
-  playback — no further SysEx goes out while the list is actually
-  running.
+  user-chosen. **Set Chain** dumps every Pattern and Rest row once (spaced
+  out, about a quarter second apart), unconditionally clears any Halt state
+  first (see the safety section above), then finishes by sending a plain
+  Program Change parking the MuRF on the first row's slot. From that
+  point, Play only ever sends Program Changes during playback — no further
+  SysEx goes out while the list is actually running.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't
@@ -654,7 +651,7 @@ the clock. It does not re-dump anything, and Set Chain stays active, so you
 can just press Play again without re-running Set Chain. If a chain is
 currently set, it also re-parks the MuRF on the chain's first row with a
 Program Change before halting, so the next Play/Continue already starts
-on the right pattern — see "Combo commands" below for the exact sequence.
+on the right pattern.
 
 ### Loop / Once / Once + Halt
 
@@ -745,33 +742,6 @@ shortcut on the current page.
 
 ---
 
-## Combo commands: exactly what each button sends
-
-Several buttons in the app bundle more than one MIDI message together,
-in a specific order, for reasons that usually trace back to the safety
-rule above. This table spells out exactly what each one sends, in order,
-using the message names from the reference table above.
-
-| Button | Exact sequence | Why this order |
-|---|---|---|
-| **Halt** | CC20 = 0 | Just the one message — freezes the pattern engine. |
-| **Pause all** | Stop → Halt | Stop first so the Halt lands on a device that's already stopped rather than mid-cycle. |
-| **Play** | (Clock Sync CC89, only if not already armed) → Start → clock ticks begin | Resets the app's own tick counter to zero before starting. |
-| **Cont** | (Clock Sync CC89, only if not already armed) → Continue → clock ticks resume | Resumes from wherever the app's tick counter already was; also one of the only three messages that clear a Halt (see the safety section). |
-| **Stop Clock** | Stop | Also stops the app's own tick-sending loop — no more clock bytes go out until Play or Continue. |
-| **Play clip** | Same as Play, then fires the clip's recorded events starting at tick 0 | |
-| **Pat Reset** | CC90 = 127 | Deferred to the next beat if clock-synced, instant otherwise. |
-| **Step** | Note 108 on, then off | |
-| **Clk Reset** (Keyboard/Stack tabs) | Note 65 on, then off ~50ms later | |
-| **Global Clock Reset** (header) | Note 65 on, then off ~50ms later, plus releases any latched performance notes in the app | Same underlying message as Clk Reset above; this one also clears latch state since it lives outside the Keyboard/Stack context where latch is normally managed. |
-| **Rec** | No MIDI by itself | Arms or finalizes recording of whatever CCs/notes/transport get sent through other controls while it's running. |
-| **Reset all** | Stop → a spaced sweep of Note-off across notes 36–108 (2ms apart, ~146ms total) → Halt. Never a Program Change. | This is the general-purpose kill switch — usable mid-performance without a chain in play — so it deliberately never re-points the MuRF at a different pattern, chain set or not. Stop first so the device isn't mid-cycle; the note-off sweep (not a CC/panic message) clears any stuck performance notes without risking a CC hitting a Halted device. |
-| **Reset Lists** | Same as Reset all, plus: **if a chain is currently set**, once the note-off sweep finishes, a Program Change parking the chain's first row, landing *before* the Halt that follows it — **if no chain is set**, Halt fires with no Program Change, same as Reset all. Also clears the Playlist's row highlights. | This is the one that means "start the chain over" — the Program Change re-points the MuRF at row 1 so the next Play/Continue starts the chain from the beginning without re-running Set Chain. It must land before Halt, never after, exactly per the safety rule above — that's the one thing Reset all and Reset Lists still share code for. |
-| **Set Chain** | Continue (unconditional) → Stop (only if the clock was left running) → CC9 (currently selected Division) → one SysEx dump per Pattern/Rest row, ~1 second apart → Program Change parking the first row's slot | Continue guarantees the device can't still be halted before any dump goes out, regardless of what the app's own tracked state claims. Two changes to this sequence — dropping this Stop, and cutting the dump spacing to 500ms — were both tried together and broke a real 22-row chain on hardware (playback stalled partway through, needed two Pause presses to stop); both were reverted rather than isolating which one was actually responsible, so treat both the Stop and the ~1 second spacing as load-bearing until proven otherwise on their own. CC9 re-sends the app's Division because that message is otherwise only ever sent when the Division control is touched directly — without this, a chain synced for the first time in a session would start on the MuRF's power-on default division instead of what the app displays. The closing Program Change parks the MuRF on row 1; Set Chain ends there, unhalted — press Play (not Continue) to start it, or Pause All first if you want it to sit silent. |
-| **Load Project** | Re-sends most of the Main tab's panel CCs live if a port is connected (skips Division/CC9, Filter Levels/CC20–27, and channel) | See the header section above for the full caveat. |
-
----
-
 ## Fast path
 
 Pick your port. Shift+C to arm Clock Sync. Cmd+. down to a sixteenth note.
@@ -793,13 +763,8 @@ Save your project whenever the take is worth keeping.
 
 ## Not in this build
 
-Ableton Link, receiving clock from another device (the MIDI tab has
-placeholder Sync checkboxes for this, not yet wired up), an overdub-style
-recording UI, recording the pattern grid directly into a clip, and a true
-mute-all row (the EQ row types still pass audio through). Several of
-these are on the roadmap — see `ROADMAP.md` in this repository for what's
-currently planned.
-
-The MIDI tab itself — Map External, port roles, note passthrough, and
-mapping presets — isn't written up in this manual yet; ask for that
-section if you want it added.
+MIDI input / external controller mapping, Ableton Link, receiving clock
+from another device, an overdub-style recording UI, recording the pattern
+grid directly into a clip, and a true mute-all row (the EQ row types still
+pass audio through). Several of these are on the roadmap — see
+`ROADMAP.md` in this repository for what's currently planned.

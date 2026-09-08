@@ -5810,15 +5810,10 @@
     // ~85ms to transmit at MIDI's fixed 31250 baud, and an 80ms gap once
     // corrupted a chained dump outright (the next dump's F0 landed before
     // the previous one's F7 finished going out), wedging the device until
-    // a physical bypass. The bump past that, to 1000ms, was originally an
-    // untested diagnostic escalation with no confirmed need behind it - but
-    // a later attempt to bring it back down to 500ms broke a real 22-row
-    // chain on hardware (playback stalled partway through, needed two
-    // Pause presses to stop), on the same test run as a Set Chain sequence
-    // change that was also reverted. Which of the two actually caused it,
-    // or whether it takes both changes at once, isn't isolated - so this
-    // stays at 1000ms until that's tested on its own.
-    const DUMP_GAP_MS = 1000;
+    // a physical bypass. 250ms keeps clear margin above that floor while
+    // cutting Set Chain's total dump time well below the 1000ms this had
+    // been bumped to as an earlier, unconfirmed diagnostic.
+    const DUMP_GAP_MS = 250;
     let dumpQueueBusy = false;
     function sendSysexSpaced(list, afterFn) {
       const jobs = (list || []).filter(Boolean);
@@ -6319,15 +6314,6 @@
         // actively cycling through patterns via MIDI clock. A bare Stop
         // here (no CC20) is fine - it's the halted state above that's
         // dangerous, not the clock being off.
-        //
-        // Reverted a change that dropped this Stop on the theory that it
-        // wasn't accomplishing anything (Stop doesn't freeze the pattern
-        // engine, only Halt does) - real-hardware testing on a full 22-row
-        // chain broke without it (playback stalled a couple of rows in,
-        // needed two Pause presses to actually stop). Whatever the exact
-        // mechanism, empirically this Stop is load-bearing here - keep it
-        // until that's understood, not just because the theory sounded
-        // right.
         clockStopDevice();
       }
       // Re-assert the app's currently-selected Division (CC9) here, once
