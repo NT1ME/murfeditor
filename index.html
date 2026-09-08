@@ -5810,12 +5810,15 @@
     // ~85ms to transmit at MIDI's fixed 31250 baud, and an 80ms gap once
     // corrupted a chained dump outright (the next dump's F0 landed before
     // the previous one's F7 finished going out), wedging the device until
-    // a physical bypass. The later bump to 1000ms was an untested
-    // diagnostic escalation from there, never confirmed as necessary -
-    // 500ms keeps well clear of the transmission floor with margin for
-    // interface/driver overhead while cutting Set Chain's total dump time
-    // roughly in half.
-    const DUMP_GAP_MS = 500;
+    // a physical bypass. The bump past that, to 1000ms, was originally an
+    // untested diagnostic escalation with no confirmed need behind it - but
+    // a later attempt to bring it back down to 500ms broke a real 22-row
+    // chain on hardware (playback stalled partway through, needed two
+    // Pause presses to stop), on the same test run as a Set Chain sequence
+    // change that was also reverted. Which of the two actually caused it,
+    // or whether it takes both changes at once, isn't isolated - so this
+    // stays at 1000ms until that's tested on its own.
+    const DUMP_GAP_MS = 1000;
     let dumpQueueBusy = false;
     function sendSysexSpaced(list, afterFn) {
       const jobs = (list || []).filter(Boolean);
