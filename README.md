@@ -625,15 +625,14 @@ the clip list to Loop.
   slots without actually running them as a list.
 - **Chain** — slot numbers are locked to row order instead of being
   user-chosen. **Set Chain** unconditionally clears any Halt state first
-  (see the safety section above), re-asserts the currently selected
-  Division, dumps every Pattern and Rest row once (spaced out, about half
-  a second apart), sends a plain Program Change parking the MuRF on the
-  first row's slot, then ends the same way Pause All does — Stop, then
-  Halt — so a freshly set chain sits silent and ready rather than needing
-  a separate manual Pause All. Press Play (not Continue) to actually start
-  it — see "Combo commands" below for the exact sequence and why. From
-  that point, Play only ever sends Program Changes during playback — no
-  further SysEx goes out while the list is actually running.
+  (see the safety section above), stops the clock if it was running,
+  re-asserts the currently selected Division, dumps every Pattern and Rest
+  row once (spaced out, about half a second apart), then finishes by
+  sending a plain Program Change parking the MuRF on the first row's slot
+  — see "Combo commands" below for the exact sequence and why each step is
+  there. From that point, Play only ever sends Program Changes during
+  playback — no further SysEx goes out while the list is actually
+  running.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't
@@ -768,7 +767,7 @@ using the message names from the reference table above.
 | **Rec** | No MIDI by itself | Arms or finalizes recording of whatever CCs/notes/transport get sent through other controls while it's running. |
 | **Reset all** | Stop → a spaced sweep of Note-off across notes 36–108 (2ms apart, ~146ms total) → Halt. Never a Program Change. | This is the general-purpose kill switch — usable mid-performance without a chain in play — so it deliberately never re-points the MuRF at a different pattern, chain set or not. Stop first so the device isn't mid-cycle; the note-off sweep (not a CC/panic message) clears any stuck performance notes without risking a CC hitting a Halted device. |
 | **Reset Lists** | Same as Reset all, plus: **if a chain is currently set**, once the note-off sweep finishes, a Program Change parking the chain's first row, landing *before* the Halt that follows it — **if no chain is set**, Halt fires with no Program Change, same as Reset all. Also clears the Playlist's row highlights. | This is the one that means "start the chain over" — the Program Change re-points the MuRF at row 1 so the next Play/Continue starts the chain from the beginning without re-running Set Chain. It must land before Halt, never after, exactly per the safety rule above — that's the one thing Reset all and Reset Lists still share code for. |
-| **Set Chain** | Continue (unconditional) → CC9 (currently selected Division) → one SysEx dump per Pattern/Rest row, ~500ms apart → Program Change parking the first row's slot → Stop → Halt | Continue guarantees the device can't still be halted before any dump goes out, regardless of what the app's own tracked state claims — no Stop follows it, since Stop only pushes the MuRF onto its own internal clock rather than actually freezing the pattern engine (only Halt does that), so it was never protecting the dump from anything. CC9 re-sends the app's Division because that message is otherwise only ever sent when the Division control is touched directly — without this, a chain synced for the first time in a session would start on the MuRF's power-on default division instead of what the app displays. The closing Program Change parks the MuRF on row 1; the Stop-then-Halt after it is the same sequence Pause All uses, ending the chain sitting silent and ready instead of needing a separate manual Pause All. Press Play (not Continue) to actually start it — Play always resets the app's tick counter to zero, where Continue would resume from wherever the clock drifted to during the dump's transmission time. |
+| **Set Chain** | Continue (unconditional) → Stop (only if the clock was left running) → CC9 (currently selected Division) → one SysEx dump per Pattern/Rest row, ~500ms apart → Program Change parking the first row's slot | Continue guarantees the device can't still be halted before any dump goes out, regardless of what the app's own tracked state claims. A real-hardware regression on a full 22-row chain showed this Stop is load-bearing even though it doesn't literally freeze the pattern engine (only Halt does that) — without it, chain playback stalled a few rows in and needed two Pause presses to actually stop, so it stays in, mechanism not fully understood. CC9 re-sends the app's Division because that message is otherwise only ever sent when the Division control is touched directly — without this, a chain synced for the first time in a session would start on the MuRF's power-on default division instead of what the app displays. The closing Program Change parks the MuRF on row 1; Set Chain ends there, unhalted — press Play (not Continue) to start it, or Pause All first if you want it to sit silent. |
 | **Load Project** | Re-sends most of the Main tab's panel CCs live if a port is connected (skips Division/CC9, Filter Levels/CC20–27, and channel) | See the header section above for the full caveat. |
 
 ---

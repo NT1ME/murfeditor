@@ -6310,24 +6310,35 @@
       // SysEx or Program Change, which is exactly what a dump is about to
       // send.
       clockPlay(false);
-      // Re-assert the app's currently-selected Division (CC9) right after
-      // Continue clears any halt. CC9 is only ever sent when the Division
-      // control is touched directly - never automatically on Start/
-      // Continue/Set Chain - so if the MuRF hasn't actually received this
-      // session's division yet (e.g. it's the first sync of the session
-      // and nobody's touched Division), it falls back to its own power-on
-      // default instead of whatever the app displays. Safe to send here
-      // regardless of halt state - Rate change is one of the addendum's
-      // own three documented ways Halt clears, same category as the
-      // Continue above.
-      //
-      // Deliberately no Stop here before dumping. Stop only pushes the
-      // MuRF off MIDI clock onto its own internal Rate clock - it doesn't
-      // actually freeze the pattern engine (only Halt does that), so it
-      // was never protecting the dump from anything. Sending a dump or
-      // Program Change while genuinely unhalted has never once caused a
-      // problem, clocked or not - only Halt does that, and Continue above
-      // already guarantees the device isn't halted here.
+      if (state.clock.running) {
+        // Stop the transport before dumping - we're about to overwrite the
+        // pattern slots' memory, which shouldn't happen while the MuRF is
+        // actively cycling through patterns via MIDI clock. A bare Stop
+        // here (no CC20) is fine - it's the halted state above that's
+        // dangerous, not the clock being off.
+        //
+        // Reverted a change that dropped this Stop on the theory that it
+        // wasn't accomplishing anything (Stop doesn't freeze the pattern
+        // engine, only Halt does) - real-hardware testing on a full 22-row
+        // chain broke without it (playback stalled a couple of rows in,
+        // needed two Pause presses to actually stop). Whatever the exact
+        // mechanism, empirically this Stop is load-bearing here - keep it
+        // until that's understood, not just because the theory sounded
+        // right.
+        clockStopDevice();
+      }
+      // Re-assert the app's currently-selected Division (CC9) here, once
+      // the transport is fully settled (unhalted, then stopped) rather than
+      // mid-transition. CC9 is only ever sent when the Division control is
+      // touched directly - never automatically on Start/Continue/Set Chain
+      // - so if the MuRF hasn't actually received this session's division
+      // yet (e.g. it's the first sync of the session and nobody's touched
+      // Division), it falls back to its own power-on default instead of
+      // whatever the app displays. Safe to send here regardless of halt
+      // state - Rate change is one of the addendum's own three documented
+      // ways Halt clears, same category as the Continue above - but by
+      // sending it only after that Continue/Stop settle, it's never asked
+      // to do double duty as a halt-clearer itself.
       applyDivision();
       const jobs = [];
       let firstSlot = null;
@@ -6369,17 +6380,9 @@
         // caused a problem. Only sending anything but a transport message
         // *during* Halt does.
         pcToSlot(firstSlot);
-        // End the same way Pause All does - Stop, then Halt - so a freshly
-        // set chain sits silent and ready instead of needing a separate
-        // manual Pause All right afterward. This isn't protecting against
-        // the Halt danger above (Continue already cleared that before
-        // anything else in this function ran); it's just parking the
-        // transport the same way you'd leave it by hand.
-        clockStopDevice();
-        haltPattern();
         setFollow(false);
         updateChainChrome();
-        setStatus('Chain set — parked on slot ' + firstSlot + ', halted. Press Play (Start only) to begin.');
+        setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
       });
     }
     function dropChain(reason) {
