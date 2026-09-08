@@ -247,6 +247,18 @@ tells the hardware to expect a synced clock stream once one shows up. Play
 is what actually starts the stream. Clock Sync is off by default whenever
 the app first opens.
 
+**Division (CC9) only takes hold while the clock is genuinely ticking.**
+Real-hardware testing traced a "chain starts on the wrong division" bug to
+this exact rule: sent while MIDI clock ticks are actively flowing, CC9
+re-points the MuRF's *MIDI-clock* division; sent into a stopped device, it
+only sets the internal clock's rate instead, which is silently irrelevant
+the moment MIDI sync resumes. Set Chain sends its own Division resend
+*before* it stops the clock for exactly this reason — see the Playlist
+section below for where that sits in the full sequence. If you're ever
+setting Division by hand outside of Set Chain and want it to stick for a
+chain, do it while the clock is actually running, not while stopped or
+halted.
+
 | Control | Key | MIDI |
 |---------|-----|------|
 | Clock arm | Shift+C | CC89 |
@@ -624,12 +636,15 @@ the clip list to Loop.
   immediately. This mode is useful for just parking a set of patterns onto
   slots without actually running them as a list.
 - **Chain** — slot numbers are locked to row order instead of being
-  user-chosen. **Set Chain** dumps every Pattern and Rest row once (spaced
-  out, about a quarter second apart), unconditionally clears any Halt state
-  first (see the safety section above), then finishes by sending a plain
-  Program Change parking the MuRF on the first row's slot. From that
-  point, Play only ever sends Program Changes during playback — no further
-  SysEx goes out while the list is actually running.
+  user-chosen. **Set Chain** unconditionally clears any Halt state first
+  (see the safety section above), re-asserts the currently selected
+  Division while the clock is still genuinely running (see the Clock
+  section above for why CC9 has to land before the clock stops, not
+  after), stops the clock, dumps every Pattern and Rest row once (spaced out,
+  about a quarter second apart), then finishes by sending a plain Program
+  Change parking the MuRF on the first row's slot. From that point, Play
+  only ever sends Program Changes during playback — no further SysEx goes
+  out while the list is actually running.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't
