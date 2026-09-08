@@ -101,10 +101,14 @@ want that, disconnect the MIDI port first, load the project, then reconnect.
 - **Mint** — progress through the Playlist's clip list.
 
 **Reset lists** — rewinds both Playlist lists back to their first row,
-clears their row highlights and meters, and stops the clock. It does not
-re-dump any patterns to the hardware, and it does not turn off a chain
-you've already set — you can press Play again afterward without needing to
-run Set Chain a second time.
+clears their row highlights and meters, stops the clock, and flushes a
+note-off sweep. It does not re-dump any patterns to the hardware, and it
+does not turn off a chain you've already set — you can press Play again
+afterward without needing to run Set Chain a second time. If a chain is
+currently set, it also re-parks the MuRF on the chain's first row (Program
+Change, landing before the Halt that follows it) — this is the one thing
+that tells Reset lists apart from Reset all below, which never re-points
+the MuRF at a different pattern.
 
 **Transport that hits the box directly:**
 
@@ -120,13 +124,14 @@ run Set Chain a second time.
 - **Clk Reset** — sends Note 65 (on, then off). Restarts the pattern's
   internal step counter on the next tick, and releases any latched
   performance notes in the app.
-- **Reset all** — the full teardown: stops the clock, stops clip playback,
-  flushes a burst of note-off messages across the performance note range,
-  zeroes the app's internal step counter, and resets every Playlist
-  run-state field back to its start. If a chain is currently set, it also
-  re-parks the MuRF on the chain's first row before halting — in that
-  order, Program Change before Halt, deliberately, for reasons covered in
-  the safety section.
+- **Reset all** — the general-purpose kill switch: stops the clock, stops
+  clip playback, flushes a burst of note-off messages across the
+  performance note range, zeroes the app's internal step counter, resets
+  every Playlist run-state field back to its start, then halts. Unlike
+  Reset Lists, it never sends a Program Change — usable mid-performance
+  without getting yanked onto a different pattern, chain set or not. If
+  you actually want to start a chain over from row 1, use Reset Lists
+  instead.
 - **Map** — put the app into mapping mode, then click any button and press
   a digit key 1 through 0 to bind that digit to that button going forward.
 - **?** — hold this down to show on-screen captions naming every visible
@@ -196,9 +201,11 @@ three legitimate methods first.
   always clears a halt unconditionally before it dumps anything. Sending
   Continue when the device wasn't actually halted is harmless — it's just
   a normal resume — so there's no downside to doing it every time.
-- **Reset Lists / Reset All**, when re-parking a chain on its first row,
-  sends that Program Change *before* sending Halt, never after — so the
-  re-park always lands on a device that's merely stopped, not halted.
+- **Reset Lists**, the only one of the two reset buttons that re-parks a
+  chain on its first row, sends that Program Change *before* sending Halt,
+  never after — so the re-park always lands on a device that's merely
+  stopped, not halted. Reset All never sends a Program Change at all, so
+  this doesn't apply to it.
 
 **What you still need to watch for yourself:** anything outside those two
 built-in guards. If you manually halt the MuRF (via the Halt button, Pause
@@ -246,11 +253,11 @@ the app first opens.
 | Play | Shift+Enter | Start (0xFA) |
 | Continue | Cmd+Enter | Continue (0xFB) |
 | Stop Clock | Shift+Space | Stop (0xFC) |
-| Pause all | Option+Space | Halt, then Stop |
+| Pause all | Option+Space | Stop, then Halt |
 | Rec | Backslash | — |
 | Play clip | Cmd+Shift+Enter | — |
-| Reset lists | Option+X | Stop, then rewind both lists |
-| Reset all | Option+Z | Halt, stop, and a note-off sweep |
+| Reset lists | Option+X | Stop, note-off sweep, Program Change + Halt if a chain is set |
+| Reset all | Option+Z | Stop, note-off sweep, Halt — never a Program Change |
 | Pat Reset | Z | CC90 |
 | Halt | Shift+X | CC20 = 0 |
 | Step | X | Note 108 |
@@ -618,14 +625,15 @@ the clip list to Loop.
   slots without actually running them as a list.
 - **Chain** — slot numbers are locked to row order instead of being
   user-chosen. **Set Chain** unconditionally clears any Halt state first
-  (see the safety section above), stops the clock if it was running,
-  re-asserts the currently selected Division, dumps every Pattern and Rest
-  row once (spaced out, about a second apart), then finishes by sending a
-  plain Program Change parking the MuRF on the first row's slot — see
-  "Combo commands" below for the exact sequence and why each step is
-  there. From that point, Play only ever sends Program Changes during
-  playback — no further SysEx goes out while the list is actually
-  running.
+  (see the safety section above), re-asserts the currently selected
+  Division, dumps every Pattern and Rest row once (spaced out, about half
+  a second apart), sends a plain Program Change parking the MuRF on the
+  first row's slot, then ends the same way Pause All does — Stop, then
+  Halt — so a freshly set chain sits silent and ready rather than needing
+  a separate manual Pause All. Press Play (not Continue) to actually start
+  it — see "Combo commands" below for the exact sequence and why. From
+  that point, Play only ever sends Program Changes during playback — no
+  further SysEx goes out while the list is actually running.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't
@@ -758,8 +766,9 @@ using the message names from the reference table above.
 | **Clk Reset** (Keyboard/Stack tabs) | Note 65 on, then off ~50ms later | |
 | **Global Clock Reset** (header) | Note 65 on, then off ~50ms later, plus releases any latched performance notes in the app | Same underlying message as Clk Reset above; this one also clears latch state since it lives outside the Keyboard/Stack context where latch is normally managed. |
 | **Rec** | No MIDI by itself | Arms or finalizes recording of whatever CCs/notes/transport get sent through other controls while it's running. |
-| **Reset all** / **Reset Lists** (Reset Lists = Reset all, plus clearing the Playlist's row highlights) | Stop → a spaced sweep of Note-off across notes 36–108 (2ms apart, ~146ms total) → **if a chain is currently set**: after that sweep finishes, Program Change parking the chain's first row, then Halt — **if no chain is set**: Halt fires immediately, no Program Change | Stop first so the device isn't mid-cycle; the note-off sweep (not a CC/panic message) clears any stuck performance notes without risking a CC hitting a Halted device; when a chain is set, the Program Change re-points the MuRF at row 1 so the next Play/Continue starts the chain from the beginning without re-running Set Chain — and it must land *before* Halt, never after, exactly per the safety rule above. |
-| **Set Chain** | Continue (unconditional) → Stop (only if the clock was left running) → CC9 (currently selected Division) → one SysEx dump per Pattern/Rest row, ~1 second apart → Program Change parking the first row's slot | Continue guarantees the device can't still be halted before any dump goes out, regardless of what the app's own tracked state claims. Stop exists to keep the MuRF's own pattern-cycling engine from actively advancing through slots while their contents are being overwritten by SysEx — it is *not* a Halt-safety step (a dump has never broken MIDI whether the clock was running or stopped, only Halt does that); this is purely about not rewriting a slot's memory while the device might be actively reading it. CC9 re-sends the app's Division because that message is otherwise only ever sent when the Division control is touched directly — without this, a chain synced for the first time in a session would start on the MuRF's power-on default division instead of what the app displays. The closing Program Change parks the MuRF on row 1 so Play can start the chain immediately afterward. |
+| **Reset all** | Stop → a spaced sweep of Note-off across notes 36–108 (2ms apart, ~146ms total) → Halt. Never a Program Change. | This is the general-purpose kill switch — usable mid-performance without a chain in play — so it deliberately never re-points the MuRF at a different pattern, chain set or not. Stop first so the device isn't mid-cycle; the note-off sweep (not a CC/panic message) clears any stuck performance notes without risking a CC hitting a Halted device. |
+| **Reset Lists** | Same as Reset all, plus: **if a chain is currently set**, once the note-off sweep finishes, a Program Change parking the chain's first row, landing *before* the Halt that follows it — **if no chain is set**, Halt fires with no Program Change, same as Reset all. Also clears the Playlist's row highlights. | This is the one that means "start the chain over" — the Program Change re-points the MuRF at row 1 so the next Play/Continue starts the chain from the beginning without re-running Set Chain. It must land before Halt, never after, exactly per the safety rule above — that's the one thing Reset all and Reset Lists still share code for. |
+| **Set Chain** | Continue (unconditional) → CC9 (currently selected Division) → one SysEx dump per Pattern/Rest row, ~500ms apart → Program Change parking the first row's slot → Stop → Halt | Continue guarantees the device can't still be halted before any dump goes out, regardless of what the app's own tracked state claims — no Stop follows it, since Stop only pushes the MuRF onto its own internal clock rather than actually freezing the pattern engine (only Halt does that), so it was never protecting the dump from anything. CC9 re-sends the app's Division because that message is otherwise only ever sent when the Division control is touched directly — without this, a chain synced for the first time in a session would start on the MuRF's power-on default division instead of what the app displays. The closing Program Change parks the MuRF on row 1; the Stop-then-Halt after it is the same sequence Pause All uses, ending the chain sitting silent and ready instead of needing a separate manual Pause All. Press Play (not Continue) to actually start it — Play always resets the app's tick counter to zero, where Continue would resume from wherever the clock drifted to during the dump's transmission time. |
 | **Load Project** | Re-sends most of the Main tab's panel CCs live if a port is connected (skips Division/CC9, Filter Levels/CC20–27, and channel) | See the header section above for the full caveat. |
 
 ---

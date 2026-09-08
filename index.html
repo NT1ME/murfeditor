@@ -2290,13 +2290,17 @@
       flashBtn('btnPauseAll');
       setStatus('Pause all — clock stopped + Halt');
     }
-    function resetAll() {
+    // Shared by Reset All and Reset Lists: stop the transport, flush any
+    // sounding performance notes, and zero out run-state - everything
+    // except the actual Halt and (for Reset Lists only) the chain-parking
+    // Program Change, since those two are the one part where the two
+    // buttons now deliberately differ.
+    function resetTransportAndState() {
       clockStopDevice();
       stopClipPlayback();
       midiPanic();
       state.clock.seqStep = 0;
       state.clock.playClip = false;
-      let parkingChain = false;
       if (state.playlist) {
         state.playlist.running = false;
         state.playlist.clipRunning = false;
@@ -2305,24 +2309,16 @@
         state.playlist.rowIndex = 0;
         state.playlist.clipIndex = 0;
         state.playlist.armedRow = null;
-        if (state.playlist.setChain && state.playlist.rowCount) {
-          const slot = (typeof rowDestSlot === 'function') ? rowDestSlot(0) : null;
-          if (slot != null) {
-            parkingChain = true;
-            // midiPanic() just scheduled 73 note-offs spaced 2ms apart (~146ms)
-            // via timestamped output.send() calls; Web MIDI transmits by
-            // timestamp, not call order, so an un-timestamped send here could
-            // jump ahead of them. Program Change has to land before Halt, not
-            // after - CC20 only clears on Rate change, Rate CV, or MIDI Start/
-            // Continue, never on Program Change, and sending a PC into an
-            // already-halted MuRF is exactly the sequence that's broken MIDI
-            // outright elsewhere this session. So Halt moves into this same
-            // delayed callback, right after the PC, instead of firing first.
-            setTimeout(() => { pcToSlot(slot); haltPattern(); }, 160);
-          }
-        }
       }
-      if (!parkingChain) haltPattern();
+    }
+    function resetAll() {
+      // No Program Change, ever - this is the general-purpose kill switch,
+      // usable mid-performance without a chain in play, and it shouldn't
+      // yank the MuRF onto slot 2 just because a chain happens to be set.
+      // Reset Lists (below) is the one that re-parks onto the chain's
+      // first row - that's the button for "start the chain over."
+      resetTransportAndState();
+      haltPattern();
       flashBtn('btnResetAll');
       setStatus('Reset all');
       updatePlayheads();
@@ -2330,13 +2326,33 @@
       if (typeof updateChainChrome === 'function') updateChainChrome();
     }
     function resetLists() {
-      resetAll();
+      resetTransportAndState();
+      let parkingChain = false;
+      if (state.playlist && state.playlist.setChain && state.playlist.rowCount) {
+        const slot = (typeof rowDestSlot === 'function') ? rowDestSlot(0) : null;
+        if (slot != null) {
+          parkingChain = true;
+          // midiPanic() just scheduled 73 note-offs spaced 2ms apart (~146ms)
+          // via timestamped output.send() calls; Web MIDI transmits by
+          // timestamp, not call order, so an un-timestamped send here could
+          // jump ahead of them. Program Change has to land before Halt, not
+          // after - CC20 only clears on Rate change, Rate CV, or MIDI Start/
+          // Continue, never on Program Change, and sending a PC into an
+          // already-halted MuRF is exactly the sequence that's broken MIDI
+          // outright elsewhere this session. So Halt moves into this same
+          // delayed callback, right after the PC, instead of firing first.
+          setTimeout(() => { pcToSlot(slot); haltPattern(); }, 160);
+        }
+      }
+      if (!parkingChain) haltPattern();
       document.querySelectorAll('#plPatRows .pl-row, #plClipRows .pl-row').forEach(r => {
         r.classList.remove('now', 'clip-now');
       });
       flashBtn('btnResetLists');
       flashBtn('btnResetListsPl');
       setStatus('Lists reset — clock stopped');
+      updatePlayheads();
+      updateClockReadout();
       if (typeof updateChainChrome === 'function') updateChainChrome();
     }
     function unstickPerfUi() {
@@ -5790,14 +5806,16 @@
       msg.push(0xF7);
       return new Uint8Array(msg);
     }
-    // Bumped hard from 200ms as a blunt diagnostic: content/framing of the
-    // dumps has been verified byte-correct against known-good factory .syx
-    // files, and resending doesn't recover a wedged MuRF, so the remaining
-    // open question is whether the device just needs more time to process
-    // each dump than Set Chain's compressed timing ever gives it. If chain
-    // playback still locks up with a full second of breathing room here,
-    // this isn't it and the gap should come back down.
-    const DUMP_GAP_MS = 1000;
+    // 200ms is a proven floor, not a guess: a 267-byte dump physically takes
+    // ~85ms to transmit at MIDI's fixed 31250 baud, and an 80ms gap once
+    // corrupted a chained dump outright (the next dump's F0 landed before
+    // the previous one's F7 finished going out), wedging the device until
+    // a physical bypass. The later bump to 1000ms was an untested
+    // diagnostic escalation from there, never confirmed as necessary -
+    // 500ms keeps well clear of the transmission floor with margin for
+    // interface/driver overhead while cutting Set Chain's total dump time
+    // roughly in half.
+    const DUMP_GAP_MS = 500;
     let dumpQueueBusy = false;
     function sendSysexSpaced(list, afterFn) {
       const jobs = (list || []).filter(Boolean);
@@ -6292,26 +6310,24 @@
       // SysEx or Program Change, which is exactly what a dump is about to
       // send.
       clockPlay(false);
-      if (state.clock.running) {
-        // Stop the transport before dumping - we're about to overwrite the
-        // pattern slots' memory, which shouldn't happen while the MuRF is
-        // actively cycling through patterns via MIDI clock. A bare Stop
-        // here (no CC20) is fine - it's the halted state above that's
-        // dangerous, not the clock being off.
-        clockStopDevice();
-      }
-      // Re-assert the app's currently-selected Division (CC9) here, once
-      // the transport is fully settled (unhalted, then stopped) rather than
-      // mid-transition. CC9 is only ever sent when the Division control is
-      // touched directly - never automatically on Start/Continue/Set Chain
-      // - so if the MuRF hasn't actually received this session's division
-      // yet (e.g. it's the first sync of the session and nobody's touched
-      // Division), it falls back to its own power-on default instead of
-      // whatever the app displays. Safe to send here regardless of halt
-      // state - Rate change is one of the addendum's own three documented
-      // ways Halt clears, same category as the Continue above - but by
-      // sending it only after that Continue/Stop settle, it's never asked
-      // to do double duty as a halt-clearer itself.
+      // Re-assert the app's currently-selected Division (CC9) right after
+      // Continue clears any halt. CC9 is only ever sent when the Division
+      // control is touched directly - never automatically on Start/
+      // Continue/Set Chain - so if the MuRF hasn't actually received this
+      // session's division yet (e.g. it's the first sync of the session
+      // and nobody's touched Division), it falls back to its own power-on
+      // default instead of whatever the app displays. Safe to send here
+      // regardless of halt state - Rate change is one of the addendum's
+      // own three documented ways Halt clears, same category as the
+      // Continue above.
+      //
+      // Deliberately no Stop here before dumping. Stop only pushes the
+      // MuRF off MIDI clock onto its own internal Rate clock - it doesn't
+      // actually freeze the pattern engine (only Halt does that), so it
+      // was never protecting the dump from anything. Sending a dump or
+      // Program Change while genuinely unhalted has never once caused a
+      // problem, clocked or not - only Halt does that, and Continue above
+      // already guarantees the device isn't halted here.
       applyDivision();
       const jobs = [];
       let firstSlot = null;
@@ -6353,9 +6369,17 @@
         // caused a problem. Only sending anything but a transport message
         // *during* Halt does.
         pcToSlot(firstSlot);
+        // End the same way Pause All does - Stop, then Halt - so a freshly
+        // set chain sits silent and ready instead of needing a separate
+        // manual Pause All right afterward. This isn't protecting against
+        // the Halt danger above (Continue already cleared that before
+        // anything else in this function ran); it's just parking the
+        // transport the same way you'd leave it by hand.
+        clockStopDevice();
+        haltPattern();
         setFollow(false);
         updateChainChrome();
-        setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
+        setStatus('Chain set — parked on slot ' + firstSlot + ', halted. Press Play (Start only) to begin.');
       });
     }
     function dropChain(reason) {
