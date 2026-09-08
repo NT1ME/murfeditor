@@ -247,17 +247,25 @@ tells the hardware to expect a synced clock stream once one shows up. Play
 is what actually starts the stream. Clock Sync is off by default whenever
 the app first opens.
 
-**Division (CC9) only takes hold while the clock is genuinely ticking.**
-Real-hardware testing traced a "chain starts on the wrong division" bug to
-this exact rule: sent while MIDI clock ticks are actively flowing, CC9
-re-points the MuRF's *MIDI-clock* division; sent into a stopped device, it
-only sets the internal clock's rate instead, which is silently irrelevant
-the moment MIDI sync resumes. Set Chain sends its own Division resend
-*before* it stops the clock for exactly this reason — see the Playlist
-section below for where that sits in the full sequence. If you're ever
-setting Division by hand outside of Set Chain and want it to stick for a
-chain, do it while the clock is actually running, not while stopped or
-halted.
+**Division (CC9) only takes hold once the clock has genuinely been ticking
+for a moment, not just the instant Continue goes out.** Real-hardware
+testing traced a "chain starts on the wrong division" bug to this: sent
+while MIDI clock ticks have actually been flowing for a bit, CC9
+re-points the MuRF's *MIDI-clock* division; sent within a millisecond of
+Continue — before the app's own clock-tick loop has sent a single real
+tick yet — it lands on a device that hasn't started receiving clock at
+all, and just sets the internal clock's rate instead, which is silently
+irrelevant the moment MIDI sync resumes. Logged evidence showed this
+exact pattern: Set Chain's Division resend landing 0–1ms after Continue
+in every run, including ones that held the right division — and in
+those, the real lock had been set moments earlier by hand, over a second
+into separate live playback, not by Set Chain's own resend at all. Set
+Chain now waits about 200ms after Continue before sending its Division
+resend, specifically to give real ticks time to flow first — see the
+Playlist section below for where that sits in the full sequence. If
+you're ever setting Division by hand outside of Set Chain and want it to
+stick for a chain, do it a beat or two into already-running playback, not
+right as you start it and not while stopped or halted.
 
 | Control | Key | MIDI |
 |---------|-----|------|
@@ -637,14 +645,14 @@ the clip list to Loop.
   slots without actually running them as a list.
 - **Chain** — slot numbers are locked to row order instead of being
   user-chosen. **Set Chain** unconditionally clears any Halt state first
-  (see the safety section above), re-asserts the currently selected
-  Division while the clock is still genuinely running (see the Clock
-  section above for why CC9 has to land before the clock stops, not
-  after), stops the clock, dumps every Pattern and Rest row once (spaced out,
-  about a quarter second apart), then finishes by sending a plain Program
-  Change parking the MuRF on the first row's slot. From that point, Play
-  only ever sends Program Changes during playback — no further SysEx goes
-  out while the list is actually running.
+  (see the safety section above), waits about 200ms for the clock to
+  actually be ticking, re-asserts the currently selected Division (see the
+  Clock section above for why that wait matters), stops the clock, dumps
+  every Pattern and Rest row once (spaced out, about a quarter second
+  apart), then finishes by sending a plain Program Change parking the
+  MuRF on the first row's slot. From that point, Play only ever sends
+  Program Changes during playback — no further SysEx goes out while the
+  list is actually running.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't

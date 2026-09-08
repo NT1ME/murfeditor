@@ -6287,8 +6287,23 @@
       }
       return true;
     }
+    // How long Set Chain waits after Continue before sending CC9. Real-
+    // hardware logs showed Set Chain's own Division resend landing 0-1ms
+    // after Continue in every tested run, including the one run that held
+    // the right division - and in that run, the lock had actually been
+    // established earlier by a manual CC9 touch sent over a full second
+    // into a separate, already-running playback, not by Set Chain itself.
+    // Sent that fast, no real clock tick has gone out yet (the RAF loop
+    // hasn't even fired once), so the MuRF has no live MIDI clock to
+    // attach a division to - functionally not so different from sending it
+    // into a stopped device. This delay gives real ticks time to actually
+    // flow before CC9 arrives; 200ms is a first attempt, not a measured
+    // value - revisit if it doesn't hold up.
+    const DIVISION_LOCK_DELAY_MS = 200;
+    let setChainBusy = false;
     function setChainNow() {
       const p = state.playlist;
+      if (setChainBusy) { setStatus('Set Chain already in progress — wait'); return; }
       if (dumpQueueBusy) { setStatus('Dumps still sending — wait'); return; }
       if (p.mode !== 'chain') { setStatus('Turn Chain on first'); return; }
       if (!p.rowCount) { setStatus('Set a row count'); return; }
@@ -6307,71 +6322,69 @@
       // clears on Rate change, Rate CV, or MIDI Start/Continue - never on
       // SysEx or Program Change, which is exactly what a dump is about to
       // send.
+      setChainBusy = true;
       clockPlay(false);
-      // CC9 (Division) has to be sent here - right after Continue, while
-      // the clock is still genuinely ticking - not after the Stop below.
-      // Real-hardware testing traced a division-doesn't-hold bug to exactly
-      // this: CC9 only re-points the MuRF's *MIDI-clock* division when
-      // ticks are actively flowing at the moment it arrives; sent into a
-      // stopped device, it just sets the internal clock's rate, which is
-      // irrelevant once MIDI sync resumes. The previous ordering (Stop,
-      // then CC9) meant Set Chain's own resend never actually established
-      // the lock - it only appeared to work on runs where the division had
-      // separately been touched by hand while already playing, before Set
-      // Chain ever ran.
-      applyDivision();
-      if (state.clock.running) {
-        // Stop the transport before dumping - we're about to overwrite the
-        // pattern slots' memory, which shouldn't happen while the MuRF is
-        // actively cycling through patterns via MIDI clock. A bare Stop
-        // here (no CC20) is fine - it's the halted state above that's
-        // dangerous, not the clock being off.
-        clockStopDevice();
-      }
-      const jobs = [];
-      let firstSlot = null;
-      for (let i = 0; i < p.rowCount; i++) {
-        const row = p.rows[i];
-        if (!row) continue;
-        if (row.type === 'rest') {
-          const slot = chainSlotForRow(i);
-          jobs.push(blankDumpBytes(slot));
-          if (firstSlot == null) firstSlot = slot;
-        } else if (row.type === 'pattern') {
-          const slot = chainSlotForRow(i);
-          const bytes = row.patternName ? sysexForName(row.patternName, slot) : null;
-          if (!bytes) {
-            dropChain('could not dump ' + (row.patternName || 'row ' + (i + 1)));
-            return;
-          }
-          jobs.push(bytes);
-          if (firstSlot == null) firstSlot = slot;
-        } else if (firstSlot == null) {
-          firstSlot = rowDestSlot(i);
+      setStatus('Locking division…');
+      setTimeout(() => {
+        // CC9 (Division) here, after a real gap since Continue (see
+        // DIVISION_LOCK_DELAY_MS above), while the clock is still
+        // genuinely ticking - not after the Stop below.
+        applyDivision();
+        if (state.clock.running) {
+          // Stop the transport before dumping - we're about to overwrite the
+          // pattern slots' memory, which shouldn't happen while the MuRF is
+          // actively cycling through patterns via MIDI clock. A bare Stop
+          // here (no CC20) is fine - it's the halted state above that's
+          // dangerous, not the clock being off.
+          clockStopDevice();
         }
-      }
-      if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); return; }
-      setStatus('Sending ' + jobs.length + ' dump' + (jobs.length === 1 ? '' : 's') + '…');
-      sendSysexSpaced(jobs, () => {
-        p.setChain = true;
-        p.seqHalted = false;
-        p.primedSlot = firstSlot;
-        p.rowIndex = 0;
-        p.patternTick = 0;
-        // Bare Program Change to park on the first row's slot - safe again
-        // now that this whole function guarantees the MuRF is never halted
-        // when it runs (the unconditional Continue above clears any halt,
-        // real or merely suspected, before anything else happens here).
-        // The isolating tests this session traced every dropout back to
-        // Halt specifically - a dump or Program Change sent while genuinely
-        // unhalted, sync or no sync, running or stopped, has never once
-        // caused a problem. Only sending anything but a transport message
-        // *during* Halt does.
-        pcToSlot(firstSlot);
-        setFollow(false);
-        updateChainChrome();
-        setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
-      });
+        const jobs = [];
+        let firstSlot = null;
+        for (let i = 0; i < p.rowCount; i++) {
+          const row = p.rows[i];
+          if (!row) continue;
+          if (row.type === 'rest') {
+            const slot = chainSlotForRow(i);
+            jobs.push(blankDumpBytes(slot));
+            if (firstSlot == null) firstSlot = slot;
+          } else if (row.type === 'pattern') {
+            const slot = chainSlotForRow(i);
+            const bytes = row.patternName ? sysexForName(row.patternName, slot) : null;
+            if (!bytes) {
+              dropChain('could not dump ' + (row.patternName || 'row ' + (i + 1)));
+              setChainBusy = false;
+              return;
+            }
+            jobs.push(bytes);
+            if (firstSlot == null) firstSlot = slot;
+          } else if (firstSlot == null) {
+            firstSlot = rowDestSlot(i);
+          }
+        }
+        if (firstSlot == null) { setStatus('Need a Pattern or EQ row'); setChainBusy = false; return; }
+        setStatus('Sending ' + jobs.length + ' dump' + (jobs.length === 1 ? '' : 's') + '…');
+        sendSysexSpaced(jobs, () => {
+          setChainBusy = false;
+          p.setChain = true;
+          p.seqHalted = false;
+          p.primedSlot = firstSlot;
+          p.rowIndex = 0;
+          p.patternTick = 0;
+          // Bare Program Change to park on the first row's slot - safe
+          // again now that this whole function guarantees the MuRF is
+          // never halted when it runs (the unconditional Continue above
+          // clears any halt, real or merely suspected, before anything
+          // else happens here). The isolating tests this session traced
+          // every dropout back to Halt specifically - a dump or Program
+          // Change sent while genuinely unhalted, sync or no sync, running
+          // or stopped, has never once caused a problem. Only sending
+          // anything but a transport message *during* Halt does.
+          pcToSlot(firstSlot);
+          setFollow(false);
+          updateChainChrome();
+          setStatus('Chain set — parked on slot ' + firstSlot + '. Press Play (Start only).');
+        });
+      }, DIVISION_LOCK_DELAY_MS);
     }
     function dropChain(reason) {
       const p = state.playlist;
