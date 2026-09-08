@@ -6318,7 +6318,13 @@
     // fixed the Division timing, this time for Program Change's own known
     // processing latency (the same one behind the pattern-transition
     // stutter documented elsewhere), not Division's tick-flow requirement.
-    const PARK_TO_HALT_DELAY_MS = 200;
+    // 200ms wasn't enough on real hardware: Halt fired with correct timing
+    // but the pattern kept audibly advancing afterward (unsynced, at the
+    // MuRF's own internal rate) instead of actually freezing - not a
+    // "still ringing out whatever was open" artifact, genuine continued
+    // motion, meaning the freeze didn't take. Bumped to 1000ms as the next
+    // value to test - still a guess, not a measured one.
+    const PARK_TO_HALT_DELAY_MS = 1000;
     let setChainBusy = false;
     function setChainNow() {
       const p = state.playlist;
