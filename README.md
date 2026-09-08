@@ -649,10 +649,18 @@ the clip list to Loop.
   actually be ticking, re-asserts the currently selected Division (see the
   Clock section above for why that wait matters), stops the clock, dumps
   every Pattern and Rest row once (spaced out, about a quarter second
-  apart), then finishes by sending a plain Program Change parking the
-  MuRF on the first row's slot. From that point, Play only ever sends
-  Program Changes during playback — no further SysEx goes out while the
-  list is actually running.
+  apart), sends a plain Program Change parking the MuRF on the first
+  row's slot, waits another ~200ms, then halts — real-hardware testing
+  found that starting playback right after the park PC with no Halt in
+  between could break MIDI outright, with no Halt ever in play anywhere
+  in that sequence (a different failure mode from the usual Halt-danger
+  rule); parking, pausing briefly, then halting held up cleanly across
+  repeated full runs. Press Play (not Continue) once you're ready to
+  start it — Play always resets the tick counter to zero, where Continue
+  would resume from wherever the clock drifted to during the dump's
+  transmission time. From that point, Play only ever sends Program
+  Changes during playback — no further SysEx goes out while the list is
+  actually running.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't
