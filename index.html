@@ -677,6 +677,9 @@
     .cell.on.band6 { background: color-mix(in srgb, var(--b7) 72%, #000); }
     .cell.on.band7 { background: color-mix(in srgb, var(--b8) 72%, #000); }
     .cell.out { opacity: 0.25; } /* beyond band length */
+    .cell.seq-steprow.on { background: color-mix(in srgb, #ffffff 65%, #000); }
+    .cell.sustain-block { border-radius: 4px; }
+    .cell.pending { outline: 2px dashed rgba(255,255,255,0.7); z-index: 2; }
     .cell.cursor {
       outline: 2px solid rgba(255,255,255,0.55);
       z-index: 2;
@@ -957,6 +960,7 @@
       <button class="tab" data-tab="stack">Stack</button>
       <button class="tab" data-tab="clock">Clips</button>
       <button class="tab" data-tab="playlist">Playlist</button>
+      <button class="tab" data-tab="sequencer">Sequencer</button>
       <button class="tab" data-tab="log">Log</button>
       <button class="tab" data-tab="midi">MIDI</button>
     </div>
@@ -1304,6 +1308,30 @@
         </div>
       </div>
 
+      <!-- ========== SEQUENCER TAB ========== -->
+      <div class="view" id="view-sequencer">
+        <div class="pattern-toolbar">
+          <div class="tgroup mode">
+            <span class="tlabel">Place</span>
+            <button type="button" id="btnSeqModeTrigger" class="on">Trigger</button>
+            <button type="button" id="btnSeqModeSustain">Sustain</button>
+          </div>
+          <div class="tgroup xport">
+            <span class="tlabel">Transport</span>
+            <button type="button" id="btnSeqPlay">Play</button>
+            <button type="button" id="btnSeqStop">Stop</button>
+          </div>
+          <div class="tgroup edit">
+            <span class="tlabel">Edit</span>
+            <button type="button" id="btnSeqClearAll">Clear All</button>
+          </div>
+          <span class="hint" id="seqHint">Click a step to place a Trigger pulse. Switch to Sustain, click a start step, then shift-click an end step to place a block. Option+Left/Right extends a focused block by one step.</span>
+        </div>
+        <div class="grid-wrap">
+          <div class="grid" id="seqGrid"></div>
+        </div>
+      </div>
+
       <!-- ========== LOG TAB ========== -->
       <div class="view" id="view-log">
         <div class="panel">
@@ -1456,6 +1484,16 @@
         ping: 'A',
         preloaded: false,
         seqHalted: false
+      },
+      sequencer: {
+        mode: 'trigger', // 'trigger' | 'sustain' - which type a click places
+        totalSteps: 64,  // 1 step = 1/16 note = 6 ticks (96 ticks/bar / 16)
+        // bands[b] = { pulses: [stepIndex,...], blocks: [{start, len},...] }
+        bands: Array.from({ length: 8 }, () => ({ pulses: [], blocks: [] })),
+        stepRow: { pulses: [] },
+        pendingBlock: null, // { band, start } - Sustain block start step, waiting on a shift-click to size it
+        running: false,
+        activeSustainBands: [] // band indices with a Sustain note currently held, for clean note-offs on Stop
       },
       mapExternalMode: false,
       mapExternalTarget: null,
@@ -2411,17 +2449,19 @@
       updatePlayheads();
       setStatus(state.follow ? 'Step follower on — grid locked' : 'Step follower off');
     }
-    function sendNoteOn(note, vel = 100) {
+    function sendNoteOn(note, vel = 100, timestamp) {
       if (state.clock && state.clock.recording) recordEvent({ kind: 'on', note: note & 0x7F, vel: vel & 0x7F });
       if (!state.output) return;
-      state.output.send([0x90 | midiChannelByte(), note & 0x7F, vel & 0x7F]);
+      if (timestamp != null) state.output.send([0x90 | midiChannelByte(), note & 0x7F, vel & 0x7F], timestamp);
+      else state.output.send([0x90 | midiChannelByte(), note & 0x7F, vel & 0x7F]);
       flashMidi();
     }
 
-    function sendNoteOff(note) {
+    function sendNoteOff(note, timestamp) {
       if (state.clock && state.clock.recording) recordEvent({ kind: 'off', note: note & 0x7F });
       if (!state.output) return;
-      state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
+      if (timestamp != null) state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0], timestamp);
+      else state.output.send([0x80 | midiChannelByte(), note & 0x7F, 0]);
     }
     function midiPanic() {
       if (state.output) {
@@ -4205,13 +4245,14 @@
         setTimeout(() => window._fitGrid(state.visibleSteps || 64), 40);
       }
       if (name === 'playlist' && typeof refreshPlaylistMenus === 'function') refreshPlaylistMenus();
+      if (name === 'sequencer' && typeof renderSeqGrid === 'function') renderSeqGrid();
       if (name === 'log' && typeof renderMidiLogAll === 'function') renderMidiLogAll();
       if (name === 'midi' && typeof renderMidiTab === 'function') renderMidiTab();
       if (typeof unstickPerfUi === 'function') unstickPerfUi();
     }
 
     function cycleAppTab(dir) {
-      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist', 'log', 'midi'];
+      const order = ['main', 'pattern', 'keyboard', 'stack', 'clock', 'playlist', 'sequencer', 'log', 'midi'];
       const cur = document.querySelector('.tab.active')?.dataset.tab || 'main';
       let i = order.indexOf(cur);
       if (i < 0) i = 0;
@@ -4753,6 +4794,7 @@
         } else if (c.tick > 24 * 24 * 64) punchOut();
       }
       if (typeof playlistOnTick === 'function') playlistOnTick();
+      if (typeof seqOnTick === 'function') seqOnTick();
     }
     function lightPerfNote(note, on) {
       document.querySelectorAll('.key[data-note="' + note + '"]').forEach(el => {
@@ -6663,6 +6705,224 @@
       }
       sel.value = String(state.playlist.clipCount || 0);
     }
+    // ---------- Sequencer (Note/CC) ----------
+    // 1 step = 1/16 note = 6 ticks (96 ticks/bar / 16 steps per bar at this
+    // grid's resolution). This is a fixed first-pass resolution - the full
+    // division/zoom menu (straight/dotted/triplet + freeform) is a
+    // follow-up; for now every step is the same fixed length.
+    const SEQ_STEP_TICKS = 6;
+    const SEQ_TRIGGER_GATE_MS = 30; // fixed short gate for a Trigger/Step pulse's Note Off
+
+    function seqBandHasPulse(band, step) {
+      return state.sequencer.bands[band].pulses.includes(step);
+    }
+    function seqBandBlockAt(band, step) {
+      return state.sequencer.bands[band].blocks.find(blk => step >= blk.start && step < blk.start + blk.len);
+    }
+    function seqCellOccupied(band, step) {
+      return seqBandHasPulse(band, step) || !!seqBandBlockAt(band, step);
+    }
+
+    function seqToggleTrigger(band, step) {
+      const row = state.sequencer.bands[band];
+      const i = row.pulses.indexOf(step);
+      if (i >= 0) { row.pulses.splice(i, 1); renderSeqGrid(); return; }
+      if (seqBandBlockAt(band, step)) { setStatus('Step ' + (step + 1) + ' already holds a Sustain block'); return; }
+      row.pulses.push(step);
+      renderSeqGrid();
+    }
+
+    function seqStepRowClick(step) {
+      const row = state.sequencer.stepRow;
+      const i = row.pulses.indexOf(step);
+      if (i >= 0) row.pulses.splice(i, 1);
+      else row.pulses.push(step);
+      renderSeqGrid();
+    }
+
+    function seqSustainClick(band, step, shiftKey) {
+      const sq = state.sequencer;
+      const existing = seqBandBlockAt(band, step);
+      if (existing && !shiftKey) {
+        // Plain click on an existing block removes it.
+        const row = sq.bands[band];
+        row.blocks = row.blocks.filter(b => b !== existing);
+        sq.pendingBlock = null;
+        renderSeqGrid();
+        return;
+      }
+      if (shiftKey && sq.pendingBlock && sq.pendingBlock.band === band) {
+        const start = Math.min(sq.pendingBlock.start, step);
+        const end = Math.max(sq.pendingBlock.start, step);
+        const row = sq.bands[band];
+        // Blocked (not overwritten) if any step in the range already holds
+        // a Trigger pulse, or a Sustain block that isn't the one we're sizing.
+        for (let s = start; s <= end; s++) {
+          if (seqBandHasPulse(band, s)) { setStatus('Blocked - step ' + (s + 1) + ' already holds a Trigger'); sq.pendingBlock = null; renderSeqGrid(); return; }
+          const blk = seqBandBlockAt(band, s);
+          if (blk) { setStatus('Blocked - step ' + (s + 1) + ' already holds a Sustain block'); sq.pendingBlock = null; renderSeqGrid(); return; }
+        }
+        row.blocks.push({ start: start, len: end - start + 1 });
+        sq.pendingBlock = null;
+        renderSeqGrid();
+        return;
+      }
+      if (seqBandHasPulse(band, step)) { setStatus('Step ' + (step + 1) + ' already holds a Trigger'); return; }
+      sq.pendingBlock = { band: band, start: step };
+      renderSeqGrid();
+    }
+
+    function seqCellClick(band, step, shiftKey) {
+      if (state.sequencer.mode === 'sustain') seqSustainClick(band, step, shiftKey);
+      else seqToggleTrigger(band, step);
+    }
+
+    function renderSeqGrid() {
+      const grid = document.getElementById('seqGrid');
+      if (!grid) return;
+      const sq = state.sequencer;
+      const vis = sq.totalSteps;
+      grid.innerHTML = '';
+      grid.style.gridTemplateColumns = `86px repeat(${vis}, var(--cell))`;
+
+      const corner = document.createElement('div');
+      corner.className = 'grid-label corner';
+      corner.textContent = 'Band';
+      grid.appendChild(corner);
+      for (let s = 1; s <= vis; s++) {
+        const h = document.createElement('div');
+        h.className = 'grid-label';
+        h.textContent = (s === 1 || s % 8 === 0 || s === vis) ? String(s) : '';
+        grid.appendChild(h);
+      }
+
+      for (let b = 0; b < 8; b++) {
+        const label = document.createElement('div');
+        label.className = 'grid-label band band' + b;
+        label.textContent = 'Band ' + (b + 1);
+        grid.appendChild(label);
+        for (let s = 0; s < vis; s++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell band' + b;
+          const blk = seqBandBlockAt(b, s);
+          if (seqBandHasPulse(b, s)) cell.classList.add('on');
+          if (blk) {
+            cell.classList.add('on', 'sustain-block');
+            if (blk.start === s) cell.classList.add('block-start');
+            if (blk.start + blk.len - 1 === s) cell.classList.add('block-end');
+          }
+          if (sq.pendingBlock && sq.pendingBlock.band === b && sq.pendingBlock.start === s) cell.classList.add('pending');
+          cell.addEventListener('click', (e) => seqCellClick(b, s, e.shiftKey));
+          grid.appendChild(cell);
+        }
+      }
+
+      const stepLabel = document.createElement('div');
+      stepLabel.className = 'grid-label band';
+      stepLabel.textContent = 'Step';
+      grid.appendChild(stepLabel);
+      for (let s = 0; s < vis; s++) {
+        const cell = document.createElement('div');
+        cell.className = 'cell seq-steprow';
+        if (sq.stepRow.pulses.includes(s)) cell.classList.add('on');
+        cell.addEventListener('click', () => seqStepRowClick(s));
+        grid.appendChild(cell);
+      }
+    }
+
+    function seqSetMode(mode) {
+      state.sequencer.mode = mode;
+      state.sequencer.pendingBlock = null;
+      document.getElementById('btnSeqModeTrigger')?.classList.toggle('on', mode === 'trigger');
+      document.getElementById('btnSeqModeSustain')?.classList.toggle('on', mode === 'sustain');
+      const hint = document.getElementById('seqHint');
+      if (hint) hint.textContent = mode === 'sustain'
+        ? 'Click a start step, then shift-click an end step in the same band to place a Sustain block. Click an existing block to remove it.'
+        : 'Click a step to place or remove a Trigger pulse.';
+    }
+
+    function seqClearAll() {
+      const sq = state.sequencer;
+      sq.bands.forEach(row => { row.pulses = []; row.blocks = []; });
+      sq.stepRow.pulses = [];
+      sq.pendingBlock = null;
+      renderSeqGrid();
+      setStatus('Sequencer cleared');
+    }
+
+    function seqStop() {
+      const sq = state.sequencer;
+      sq.running = false;
+      sq.activeSustainBands.forEach(b => sendNoteOff(NOTE_MAPS.sustained[b]));
+      sq.activeSustainBands = [];
+      setStatus('Sequencer stopped');
+    }
+
+    function seqPlay() {
+      const sq = state.sequencer;
+      sq.running = true;
+      if (!state.clock.running) {
+        clockPlay(true);
+        // clockPlay(true) resets state.clock.tick to 0, but the timer
+        // loop's while(c.tick < due) only ever increments tick and THEN
+        // calls clockTick() - tick 0 itself is never passed to clockTick(),
+        // so step 0 would silently never fire on a fresh Start without this
+        // explicit call. Only safe to assume tick is exactly 0 here because
+        // we're the one who just started the clock ourselves - joining an
+        // already-running clock resyncs naturally at the next real tick.
+        seqOnTick();
+      }
+      setStatus('Sequencer running');
+    }
+
+    // Called once per elapsed MIDI clock tick from clockTick(), same as
+    // playlistOnTick() - keeps the sequencer's notion of "current step"
+    // exactly in step with the shared clock rather than a separate counter.
+    function seqOnTick() {
+      const sq = state.sequencer;
+      if (!sq.running) return;
+      const cycleTicks = sq.totalSteps * SEQ_STEP_TICKS;
+      const localTick = state.clock.tick % cycleTicks;
+      if (localTick % SEQ_STEP_TICKS !== 0) return;
+      const step = localTick / SEQ_STEP_TICKS;
+      const tickMs = 60000 / Math.max(20, state.clock.bpm || 120) / 24;
+      const now = state.clock.origin + state.clock.tick * tickMs;
+
+      if (sq.stepRow.pulses.includes(step)) {
+        const note = NOTE_MAPS.step[0];
+        sendNoteOn(note, 100, now);
+        sendNoteOff(note, now + SEQ_TRIGGER_GATE_MS);
+      }
+      for (let b = 0; b < 8; b++) {
+        const row = sq.bands[b];
+        if (row.pulses.includes(step)) {
+          const note = NOTE_MAPS.triggered[b];
+          sendNoteOn(note, 100, now);
+          sendNoteOff(note, now + SEQ_TRIGGER_GATE_MS);
+        }
+        row.blocks.forEach(blk => {
+          const note = NOTE_MAPS.sustained[b];
+          if (blk.start === step) {
+            sendNoteOn(note, 100, now);
+            if (!sq.activeSustainBands.includes(b)) sq.activeSustainBands.push(b);
+          }
+          if (blk.start + blk.len === step) {
+            sendNoteOff(note, now);
+            sq.activeSustainBands = sq.activeSustainBands.filter(x => x !== b);
+          }
+        });
+      }
+    }
+
+    function initSequencer() {
+      document.getElementById('btnSeqModeTrigger')?.addEventListener('click', () => seqSetMode('trigger'));
+      document.getElementById('btnSeqModeSustain')?.addEventListener('click', () => seqSetMode('sustain'));
+      document.getElementById('btnSeqPlay')?.addEventListener('click', seqPlay);
+      document.getElementById('btnSeqStop')?.addEventListener('click', seqStop);
+      document.getElementById('btnSeqClearAll')?.addEventListener('click', seqClearAll);
+      renderSeqGrid();
+    }
+
     function initPlaylist() {
       ensurePlRows();
       const rc = document.getElementById('plRowCount');
@@ -6859,6 +7119,7 @@
       initMapExternal();
       initClock();
       initPlaylist();
+      initSequencer();
       initMIDI().then(() => {
         if (saved && saved.portId) {
           const sel = document.getElementById('midiPort');
