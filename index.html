@@ -1321,6 +1321,11 @@
             <button type="button" id="btnSeqPlay">Play</button>
             <button type="button" id="btnSeqStop">Stop</button>
           </div>
+          <div class="tgroup division">
+            <span class="tlabel">Division</span>
+            <select id="seqDivision"></select>
+            <button type="button" id="btnSeqSnap" class="on">Snap: On</button>
+          </div>
           <div class="tgroup edit">
             <span class="tlabel">Edit</span>
             <button type="button" id="btnSeqClearAll">Clear All</button>
@@ -1487,11 +1492,13 @@
       },
       sequencer: {
         mode: 'trigger', // 'trigger' | 'sustain' - which type a click places
-        totalSteps: 64,  // 1 step = 1/16 note = 6 ticks (96 ticks/bar / 16)
-        // bands[b] = { pulses: [stepIndex,...], blocks: [{start, len},...] }
+        totalSteps: 64,  // visible grid columns; column width = current division
+        divisionIndex: 6, // index into SEQ_DIVISIONS - default 16th note straight
+        snap: true, // off = ignore the division above, place at raw 1-tick resolution
+        // bands[b] = { pulses: [absoluteTick,...], blocks: [{start: absoluteTick, len: ticks},...] }
         bands: Array.from({ length: 8 }, () => ({ pulses: [], blocks: [] })),
-        stepRow: { pulses: [] },
-        pendingBlock: null, // { band, start } - Sustain block start step, waiting on a shift-click to size it
+        stepRow: { pulses: [] }, // absolute ticks, same as bands[*].pulses
+        pendingBlock: null, // { band, startTick } - Sustain block start, waiting on a shift-click to size it
         running: false,
         activeSustainBands: [] // band indices with a Sustain note currently held, for clean note-offs on Stop
       },
@@ -6706,43 +6713,81 @@
       sel.value = String(state.playlist.clipCount || 0);
     }
     // ---------- Sequencer (Note/CC) ----------
-    // 1 step = 1/16 note = 6 ticks (96 ticks/bar / 16 steps per bar at this
-    // grid's resolution). This is a fixed first-pass resolution - the full
-    // division/zoom menu (straight/dotted/triplet + freeform) is a
-    // follow-up; for now every step is the same fixed length.
-    const SEQ_STEP_TICKS = 6;
+    // Pulses and block starts/lengths are stored as ABSOLUTE MIDI clock
+    // ticks (24 ticks/quarter note), not step indices - so changing the
+    // division below only changes the grid's display/placement
+    // granularity going forward, never retroactively moves anything
+    // already placed. 7 base note values x {straight, dotted, triplet} =
+    // 21 divisions, plus a 22nd freeform entry using the smallest unit the
+    // clock can express: 1 raw tick. A 64th note is 1.5 ticks - not a
+    // whole number - so its grid alternates 1/2-tick spacing when rounded
+    // to the nearest real tick; that's an inherent property of fitting a
+    // 64th-note grid onto a 24-ppqn clock, not a bug, and it's exactly the
+    // gap the Free division's 1-tick resolution exists to cover.
+    const SEQ_BASE_DIVISIONS = [
+      { name: '64th', ticks: 1.5 },
+      { name: '32nd', ticks: 3 },
+      { name: '16th', ticks: 6 },
+      { name: '8th', ticks: 12 },
+      { name: 'Quarter', ticks: 24 },
+      { name: 'Half', ticks: 48 },
+      { name: 'Whole', ticks: 96 }
+    ];
+    const SEQ_DIVISIONS = [];
+    SEQ_BASE_DIVISIONS.forEach(d => {
+      SEQ_DIVISIONS.push({ name: d.name, ticks: d.ticks });
+      SEQ_DIVISIONS.push({ name: d.name + ' dotted', ticks: d.ticks * 1.5 });
+      SEQ_DIVISIONS.push({ name: d.name + ' triplet', ticks: d.ticks * 2 / 3 });
+    });
+    SEQ_DIVISIONS.push({ name: 'Free (1 tick)', ticks: 1 });
     const SEQ_TRIGGER_GATE_MS = 30; // fixed short gate for a Trigger/Step pulse's Note Off
 
-    function seqBandHasPulse(band, step) {
-      return state.sequencer.bands[band].pulses.includes(step);
-    }
-    function seqBandBlockAt(band, step) {
-      return state.sequencer.bands[band].blocks.find(blk => step >= blk.start && step < blk.start + blk.len);
-    }
-    function seqCellOccupied(band, step) {
-      return seqBandHasPulse(band, step) || !!seqBandBlockAt(band, step);
-    }
-
-    function seqToggleTrigger(band, step) {
-      const row = state.sequencer.bands[band];
-      const i = row.pulses.indexOf(step);
-      if (i >= 0) { row.pulses.splice(i, 1); renderSeqGrid(); return; }
-      if (seqBandBlockAt(band, step)) { setStatus('Step ' + (step + 1) + ' already holds a Sustain block'); return; }
-      row.pulses.push(step);
-      renderSeqGrid();
-    }
-
-    function seqStepRowClick(step) {
-      const row = state.sequencer.stepRow;
-      const i = row.pulses.indexOf(step);
-      if (i >= 0) row.pulses.splice(i, 1);
-      else row.pulses.push(step);
-      renderSeqGrid();
-    }
-
-    function seqSustainClick(band, step, shiftKey) {
+    // Ticks per grid column right now. Snap off forces the finest (1-tick)
+    // resolution regardless of which division is selected, as a fast
+    // override rather than requiring you to switch the dropdown to Free.
+    function seqTicksPerStep() {
       const sq = state.sequencer;
-      const existing = seqBandBlockAt(band, step);
+      if (!sq.snap) return 1;
+      const d = SEQ_DIVISIONS[sq.divisionIndex] || SEQ_DIVISIONS[6];
+      return d.ticks;
+    }
+    function seqColToTick(col) {
+      return Math.round(col * seqTicksPerStep());
+    }
+
+    function seqBandHasPulse(band, tick) {
+      return state.sequencer.bands[band].pulses.includes(tick);
+    }
+    function seqBandBlockAt(band, tick) {
+      return state.sequencer.bands[band].blocks.find(blk => tick >= blk.start && tick < blk.start + blk.len);
+    }
+    function seqCellOccupied(band, tick) {
+      return seqBandHasPulse(band, tick) || !!seqBandBlockAt(band, tick);
+    }
+
+    function seqToggleTrigger(band, col) {
+      const tick = seqColToTick(col);
+      const row = state.sequencer.bands[band];
+      const i = row.pulses.indexOf(tick);
+      if (i >= 0) { row.pulses.splice(i, 1); renderSeqGrid(); return; }
+      if (seqBandBlockAt(band, tick)) { setStatus('That step already holds a Sustain block'); return; }
+      row.pulses.push(tick);
+      renderSeqGrid();
+    }
+
+    function seqStepRowClick(col) {
+      const tick = seqColToTick(col);
+      const row = state.sequencer.stepRow;
+      const i = row.pulses.indexOf(tick);
+      if (i >= 0) row.pulses.splice(i, 1);
+      else row.pulses.push(tick);
+      renderSeqGrid();
+    }
+
+    function seqSustainClick(band, col, shiftKey) {
+      const sq = state.sequencer;
+      const tick = seqColToTick(col);
+      const existing = seqBandBlockAt(band, tick);
       if (existing && !shiftKey) {
         // Plain click on an existing block removes it.
         const row = sq.bands[band];
@@ -6752,29 +6797,32 @@
         return;
       }
       if (shiftKey && sq.pendingBlock && sq.pendingBlock.band === band) {
-        const start = Math.min(sq.pendingBlock.start, step);
-        const end = Math.max(sq.pendingBlock.start, step);
+        const stepTicks = seqTicksPerStep();
+        const start = Math.min(sq.pendingBlock.startTick, tick);
+        const endTick = Math.max(sq.pendingBlock.startTick, tick);
+        const len = (endTick - start) + stepTicks;
         const row = sq.bands[band];
-        // Blocked (not overwritten) if any step in the range already holds
-        // a Trigger pulse, or a Sustain block that isn't the one we're sizing.
-        for (let s = start; s <= end; s++) {
-          if (seqBandHasPulse(band, s)) { setStatus('Blocked - step ' + (s + 1) + ' already holds a Trigger'); sq.pendingBlock = null; renderSeqGrid(); return; }
-          const blk = seqBandBlockAt(band, s);
-          if (blk) { setStatus('Blocked - step ' + (s + 1) + ' already holds a Sustain block'); sq.pendingBlock = null; renderSeqGrid(); return; }
+        // Blocked (not overwritten) if the range already holds a Trigger
+        // pulse, or a Sustain block that isn't the one we're sizing.
+        if (row.pulses.some(p => p >= start && p < start + len)) {
+          setStatus('Blocked - range already holds a Trigger'); sq.pendingBlock = null; renderSeqGrid(); return;
         }
-        row.blocks.push({ start: start, len: end - start + 1 });
+        if (row.blocks.some(b => start < b.start + b.len && b.start < start + len)) {
+          setStatus('Blocked - range already holds a Sustain block'); sq.pendingBlock = null; renderSeqGrid(); return;
+        }
+        row.blocks.push({ start: start, len: len });
         sq.pendingBlock = null;
         renderSeqGrid();
         return;
       }
-      if (seqBandHasPulse(band, step)) { setStatus('Step ' + (step + 1) + ' already holds a Trigger'); return; }
-      sq.pendingBlock = { band: band, start: step };
+      if (seqBandHasPulse(band, tick)) { setStatus('That step already holds a Trigger'); return; }
+      sq.pendingBlock = { band: band, startTick: tick };
       renderSeqGrid();
     }
 
-    function seqCellClick(band, step, shiftKey) {
-      if (state.sequencer.mode === 'sustain') seqSustainClick(band, step, shiftKey);
-      else seqToggleTrigger(band, step);
+    function seqCellClick(band, col, shiftKey) {
+      if (state.sequencer.mode === 'sustain') seqSustainClick(band, col, shiftKey);
+      else seqToggleTrigger(band, col);
     }
 
     function renderSeqGrid() {
@@ -6782,6 +6830,7 @@
       if (!grid) return;
       const sq = state.sequencer;
       const vis = sq.totalSteps;
+      const stepTicks = seqTicksPerStep();
       grid.innerHTML = '';
       grid.style.gridTemplateColumns = `86px repeat(${vis}, var(--cell))`;
 
@@ -6801,18 +6850,19 @@
         label.className = 'grid-label band band' + b;
         label.textContent = 'Band ' + (b + 1);
         grid.appendChild(label);
-        for (let s = 0; s < vis; s++) {
+        for (let col = 0; col < vis; col++) {
+          const tick = seqColToTick(col);
           const cell = document.createElement('div');
           cell.className = 'cell band' + b;
-          const blk = seqBandBlockAt(b, s);
-          if (seqBandHasPulse(b, s)) cell.classList.add('on');
+          const blk = seqBandBlockAt(b, tick);
+          if (seqBandHasPulse(b, tick)) cell.classList.add('on');
           if (blk) {
             cell.classList.add('on', 'sustain-block');
-            if (blk.start === s) cell.classList.add('block-start');
-            if (blk.start + blk.len - 1 === s) cell.classList.add('block-end');
+            if (blk.start === tick) cell.classList.add('block-start');
+            if (blk.start + blk.len <= tick + stepTicks) cell.classList.add('block-end');
           }
-          if (sq.pendingBlock && sq.pendingBlock.band === b && sq.pendingBlock.start === s) cell.classList.add('pending');
-          cell.addEventListener('click', (e) => seqCellClick(b, s, e.shiftKey));
+          if (sq.pendingBlock && sq.pendingBlock.band === b && sq.pendingBlock.startTick === tick) cell.classList.add('pending');
+          cell.addEventListener('click', (e) => seqCellClick(b, col, e.shiftKey));
           grid.appendChild(cell);
         }
       }
@@ -6821,13 +6871,30 @@
       stepLabel.className = 'grid-label band';
       stepLabel.textContent = 'Step';
       grid.appendChild(stepLabel);
-      for (let s = 0; s < vis; s++) {
+      for (let col = 0; col < vis; col++) {
+        const tick = seqColToTick(col);
         const cell = document.createElement('div');
         cell.className = 'cell seq-steprow';
-        if (sq.stepRow.pulses.includes(s)) cell.classList.add('on');
-        cell.addEventListener('click', () => seqStepRowClick(s));
+        if (sq.stepRow.pulses.includes(tick)) cell.classList.add('on');
+        cell.addEventListener('click', () => seqStepRowClick(col));
         grid.appendChild(cell);
       }
+    }
+
+    function seqSetDivision(index) {
+      state.sequencer.divisionIndex = Math.max(0, Math.min(SEQ_DIVISIONS.length - 1, index | 0));
+      state.sequencer.pendingBlock = null;
+      renderSeqGrid();
+      setStatus('Division: ' + SEQ_DIVISIONS[state.sequencer.divisionIndex].name);
+    }
+
+    function seqToggleSnap() {
+      state.sequencer.snap = !state.sequencer.snap;
+      state.sequencer.pendingBlock = null;
+      document.getElementById('btnSeqSnap')?.classList.toggle('on', state.sequencer.snap);
+      const btn = document.getElementById('btnSeqSnap');
+      if (btn) btn.textContent = 'Snap: ' + (state.sequencer.snap ? 'On' : 'Off');
+      renderSeqGrid();
     }
 
     function seqSetMode(mode) {
@@ -6876,37 +6943,40 @@
     }
 
     // Called once per elapsed MIDI clock tick from clockTick(), same as
-    // playlistOnTick() - keeps the sequencer's notion of "current step"
-    // exactly in step with the shared clock rather than a separate counter.
+    // playlistOnTick(). Checks every raw tick against exact tick membership
+    // rather than gating on a step boundary - necessary because a division
+    // like 64th-note-straight is 1.5 ticks, not a whole number, so "is this
+    // tick a step boundary" isn't well-defined the way it would be at a
+    // fixed integer resolution. Pulses/block edges are always stored as
+    // already-rounded integer ticks, so a plain membership check is exact.
     function seqOnTick() {
       const sq = state.sequencer;
       if (!sq.running) return;
-      const cycleTicks = sq.totalSteps * SEQ_STEP_TICKS;
-      const localTick = state.clock.tick % cycleTicks;
-      if (localTick % SEQ_STEP_TICKS !== 0) return;
-      const step = localTick / SEQ_STEP_TICKS;
+      const stepTicks = seqTicksPerStep();
+      const cycleTicks = Math.max(1, Math.round(sq.totalSteps * stepTicks));
+      const tick = state.clock.tick % cycleTicks;
       const tickMs = 60000 / Math.max(20, state.clock.bpm || 120) / 24;
       const now = state.clock.origin + state.clock.tick * tickMs;
 
-      if (sq.stepRow.pulses.includes(step)) {
+      if (sq.stepRow.pulses.includes(tick)) {
         const note = NOTE_MAPS.step[0];
         sendNoteOn(note, 100, now);
         sendNoteOff(note, now + SEQ_TRIGGER_GATE_MS);
       }
       for (let b = 0; b < 8; b++) {
         const row = sq.bands[b];
-        if (row.pulses.includes(step)) {
+        if (row.pulses.includes(tick)) {
           const note = NOTE_MAPS.triggered[b];
           sendNoteOn(note, 100, now);
           sendNoteOff(note, now + SEQ_TRIGGER_GATE_MS);
         }
         row.blocks.forEach(blk => {
           const note = NOTE_MAPS.sustained[b];
-          if (blk.start === step) {
+          if (blk.start === tick) {
             sendNoteOn(note, 100, now);
             if (!sq.activeSustainBands.includes(b)) sq.activeSustainBands.push(b);
           }
-          if (blk.start + blk.len === step) {
+          if (blk.start + blk.len === tick) {
             sendNoteOff(note, now);
             sq.activeSustainBands = sq.activeSustainBands.filter(x => x !== b);
           }
@@ -6920,6 +6990,19 @@
       document.getElementById('btnSeqPlay')?.addEventListener('click', seqPlay);
       document.getElementById('btnSeqStop')?.addEventListener('click', seqStop);
       document.getElementById('btnSeqClearAll')?.addEventListener('click', seqClearAll);
+      const divSel = document.getElementById('seqDivision');
+      if (divSel) {
+        divSel.innerHTML = '';
+        SEQ_DIVISIONS.forEach((d, i) => {
+          const o = document.createElement('option');
+          o.value = i;
+          o.textContent = d.name;
+          divSel.appendChild(o);
+        });
+        divSel.value = String(state.sequencer.divisionIndex);
+        divSel.addEventListener('change', () => seqSetDivision(parseInt(divSel.value, 10)));
+      }
+      document.getElementById('btnSeqSnap')?.addEventListener('click', seqToggleSnap);
       renderSeqGrid();
     }
 
