@@ -1269,6 +1269,7 @@
               <button type="button" id="btnPlChain">Chain</button>
               <button type="button" id="btnSetChain">Set chain</button>
               <button type="button" id="btnResetListsPl" title="Rewind both lists + stop clock / ⌥X" data-kbd="⌥X">Reset lists</button>
+              <label title="How long a recent Halt must have been sitting before Set Chain will send its Start. Confirmed safe at 24s; lower for testing how low it can go on real hardware.">Halt settle <input type="number" id="haltSettleSec" min="0" max="120" step="1" style="width:4em"> s</label>
               <span class="hint">Row 1→slot 2 … skip 1 and 13. Rest is a blank pattern, not Halt. Trigger/Sustain on Rest → next Pattern gets Start.</span>
             </div>
           </div>
@@ -6672,6 +6673,17 @@
       document.getElementById('btnResetLists')?.addEventListener('click', resetLists);
       document.getElementById('btnResetListsPl')?.addEventListener('click', resetLists);
       document.getElementById('btnSetChain')?.addEventListener('click', setChainNow);
+      (() => {
+        const el = document.getElementById('haltSettleSec');
+        if (!el) return;
+        el.value = Math.round((state.clock.haltSettleMs != null ? state.clock.haltSettleMs : HALT_SETTLE_MS) / 1000);
+        el.addEventListener('change', () => {
+          const secs = Math.max(0, Math.min(120, parseInt(el.value, 10) || 0));
+          el.value = secs;
+          state.clock.haltSettleMs = secs * 1000;
+          setStatus('Halt settle set to ' + secs + 's');
+        });
+      })();
       document.getElementById('btnPlSendRow')?.addEventListener('click', () => sendDumpRow());
       document.getElementById('btnPlSendAll')?.addEventListener('click', sendDumpAll);
       document.getElementById('btnPlLoop')?.addEventListener('click', () => { state.playlist.playMode = 'loop'; updateChainChrome(); });
