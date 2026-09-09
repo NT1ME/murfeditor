@@ -220,7 +220,13 @@ three legitimate methods first.
   clean. So Set Chain now tracks when the last genuine Halt happened and,
   if it's been less than 24 seconds, waits out the remainder — showing
   "Letting Halt settle before Set Chain…" — before sending anything. If
-  no Halt has happened yet this session, this adds no delay at all.
+  no Halt has happened yet this session, this adds no delay at all. The
+  24-second figure is the shortest gap confirmed safe so far, not
+  necessarily the true minimum — it's read from
+  `state.clock.haltSettleMs` (falling back to 24000), so it can be
+  narrowed down from the browser console mid-session (e.g.
+  `state.clock.haltSettleMs = 12000`) without needing a new build for
+  each trial while pinning down the real threshold on real hardware.
 - **Reset Lists**, the only one of the two reset buttons that re-parks a
   chain on its first row, sends that Program Change *before* sending Halt,
   never after — so the re-park always lands on a device that's merely

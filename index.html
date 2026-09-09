@@ -6309,7 +6309,10 @@
     // gap broke MIDI outright, while every gap of 24s or more (five
     // separate runs, up to ~62s) came out clean. 24000 is the shortest gap
     // actually confirmed safe, not a guess - see the reasoning in
-    // setChainNow below for the full account.
+    // setChainNow below for the full account. Read through state.clock so
+    // it's live-tweakable from the console mid-session (e.g.
+    // state.clock.haltSettleMs = 12000) while narrowing this down on real
+    // hardware, without needing a redeploy between each trial.
     const HALT_SETTLE_MS = 24000;
     let setChainBusy = false;
     function setChainNow() {
@@ -6363,7 +6366,8 @@
       // to the shortest gap actually confirmed safe, not a fresh guess.
       setChainBusy = true;
       const sinceHalt = state.clock.haltedAt != null ? (performance.now() - state.clock.haltedAt) : Infinity;
-      const settleWait = Math.max(0, HALT_SETTLE_MS - sinceHalt);
+      const settleMs = state.clock.haltSettleMs != null ? state.clock.haltSettleMs : HALT_SETTLE_MS;
+      const settleWait = Math.max(0, settleMs - sinceHalt);
       if (settleWait > 0) setStatus('Letting Halt settle before Set Chain…');
       setTimeout(() => { beginSetChainSequence(); }, settleWait);
     }
