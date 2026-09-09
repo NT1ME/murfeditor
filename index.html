@@ -1270,6 +1270,7 @@
               <button type="button" id="btnSetChain">Set chain</button>
               <button type="button" id="btnResetListsPl" title="Rewind both lists + stop clock / ⌥X" data-kbd="⌥X">Reset lists</button>
               <label title="How long a recent Halt must have been sitting before Set Chain will send its Start. Confirmed safe at 24s; lower for testing how low it can go on real hardware.">Halt settle <input type="number" id="haltSettleSec" min="0" max="120" step="1" style="width:4em"> s</label>
+              <label title="Send each row-advance Program Change this many milliseconds early, to offset the MuRF's own small delay between receiving a PC and audibly starting the new pattern. Only affects row-advance PCs during playback, not Set Chain's initial park PC.">PC offset <input type="number" id="pcOffsetMs" min="0" max="500" step="5" style="width:4em"> ms early</label>
               <span class="hint">Row 1→slot 2 … skip 1 and 13. Rest is a blank pattern, not Halt. Trigger/Sustain on Rest → next Pattern gets Start.</span>
             </div>
           </div>
@@ -1447,6 +1448,7 @@
         running: false,
         clipRunning: false,
         rowIndex: 0,
+        pcFiredIndex: 0,
         clipIndex: 0,
         patternTick: 0,
         clipTick: 0,
@@ -2309,6 +2311,7 @@
         state.playlist.patternTick = 0;
         state.playlist.clipTick = 0;
         state.playlist.rowIndex = 0;
+        state.playlist.pcFiredIndex = 0;
         state.playlist.clipIndex = 0;
         state.playlist.armedRow = null;
       }
@@ -6160,10 +6163,29 @@
         if (read) read.textContent = barInList + ' / ' + chainTotalBars() + ' bars';
         if (barEl) barEl.style.width = (pTotal ? Math.min(100, (p.patternTick / pTotal) * 100) : 0) + '%';
         document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
-        if (hit.i !== p.rowIndex) {
-          p.rowIndex = hit.i;
+        if (hit.i !== p.rowIndex) p.rowIndex = hit.i;
+        // Row-advance PCs can be sent a little early to offset the MuRF's
+        // own small processing latency between receiving a Program Change
+        // and audibly starting the new pattern - most noticeable on sparse
+        // patterns. pcOffsetMs only affects *when this row-advance PC
+        // fires*, not p.rowIndex/the display above (both stay tied to the
+        // real elapsed tick) or Set Chain's own initial park PC. A
+        // separate fired-row tracker is used as the guard here so it can
+        // run ahead of p.rowIndex without the display jumping early too.
+        // Converted to ticks at the current BPM since the clock is
+        // tick-quantized - fractional-tick offsets round to the nearest
+        // tick.
+        const pcOffsetMs = state.clock.pcOffsetMs || 0;
+        let fireHit = hit;
+        if (pcOffsetMs > 0) {
+          const tickMs = 60000 / Math.max(20, state.clock.bpm || 120) / 24;
+          const offsetTicks = Math.round(pcOffsetMs / tickMs);
+          fireHit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick + offsetTicks, 'bars');
+        }
+        if (fireHit.i !== p.pcFiredIndex) {
+          p.pcFiredIndex = fireHit.i;
           p.preloaded = false;
-          enterPlaylistRow(hit.i);
+          enterPlaylistRow(fireHit.i);
         }
         if (p.patternTick >= pTotal) finishPatternList();
       }
@@ -6191,6 +6213,7 @@
       if (p.playMode === 'loop') {
         p.patternTick = 0;
         p.rowIndex = 0;
+        p.pcFiredIndex = 0;
         p.preloaded = false;
         enterPlaylistRow(0);
         document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === 0));
@@ -6420,6 +6443,7 @@
           p.seqHalted = false;
           p.primedSlot = firstSlot;
           p.rowIndex = 0;
+          p.pcFiredIndex = 0;
           p.patternTick = 0;
           // Bare Program Change to park on the first row's slot - safe
           // again now that this whole function guarantees the MuRF is
@@ -6466,6 +6490,7 @@
         p.patternTick = 0;
         p.clipTick = 0;
         p.rowIndex = 0;
+        p.pcFiredIndex = 0;
         p.clipIndex = 0;
         p.preloaded = false;
         p.needStartAfterTs = false;
@@ -6682,6 +6707,17 @@
           el.value = secs;
           state.clock.haltSettleMs = secs * 1000;
           setStatus('Halt settle set to ' + secs + 's');
+        });
+      })();
+      (() => {
+        const el = document.getElementById('pcOffsetMs');
+        if (!el) return;
+        el.value = state.clock.pcOffsetMs || 0;
+        el.addEventListener('change', () => {
+          const ms = Math.max(0, Math.min(500, parseInt(el.value, 10) || 0));
+          el.value = ms;
+          state.clock.pcOffsetMs = ms;
+          setStatus('PC offset set to ' + ms + 'ms early');
         });
       })();
       document.getElementById('btnPlSendRow')?.addEventListener('click', () => sendDumpRow());

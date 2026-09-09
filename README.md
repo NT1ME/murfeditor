@@ -218,15 +218,15 @@ three legitimate methods first.
   A gap of roughly 3.6 seconds broke MIDI outright; every gap of 24
   seconds or longer (five separate runs, up to about a minute) came out
   clean. So Set Chain now tracks when the last genuine Halt happened and,
-  if it's been less than 24 seconds, waits out the remainder — showing
-  "Letting Halt settle before Set Chain…" — before sending anything. If
-  no Halt has happened yet this session, this adds no delay at all. The
-  24-second figure is the shortest gap confirmed safe so far, not
-  necessarily the true minimum — it's read from
-  `state.clock.haltSettleMs` (falling back to 24000), so it can be
-  narrowed down from the browser console mid-session (e.g.
-  `state.clock.haltSettleMs = 12000`) without needing a new build for
-  each trial while pinning down the real threshold on real hardware.
+  if it's been less than the configured settle time, waits out the
+  remainder — showing "Letting Halt settle before Set Chain…" — before
+  sending anything. If no Halt has happened yet this session, this adds
+  no delay at all. 24 seconds is the default and the shortest gap
+  originally confirmed safe, not necessarily the true minimum — real-
+  hardware testing has since found gaps as low as 5 seconds holding up
+  cleanly. The **Halt settle** field next to Set Chain on the Playlist
+  page (backed by `state.clock.haltSettleMs`) lets you narrow this down
+  further on the fly, no console or redeploy needed.
 - **Reset Lists**, the only one of the two reset buttons that re-parks a
   chain on its first row, sends that Program Change *before* sending Halt,
   never after — so the re-park always lands on a device that's merely
@@ -679,6 +679,17 @@ the clip list to Loop.
   MuRF on the first row's slot. From that point, Play only ever sends
   Program Changes during playback — no further SysEx goes out while the
   list is actually running.
+
+**PC offset.** The **PC offset** field next to Set Chain (backed by
+`state.clock.pcOffsetMs`, in milliseconds) sends each row-advance
+Program Change during playback that many milliseconds early, to
+compensate for the MuRF's own small delay between receiving a Program
+Change and audibly starting the new pattern — most noticeable on sparse
+patterns. It only affects the row-advance PCs sent during playback, not
+Set Chain's own initial park PC. Since the app's clock is tick-quantized
+(24 ticks per quarter note), the offset is converted to ticks at the
+current BPM and rounds to the nearest tick, so very small values may not
+be achievable at slower tempos.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't
