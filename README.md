@@ -681,15 +681,25 @@ the clip list to Loop.
   list is actually running.
 
 **PC offset.** The **PC offset** field next to Set Chain (backed by
-`state.clock.pcOffsetMs`, in milliseconds) sends each row-advance
-Program Change during playback that many milliseconds early, to
+`state.clock.pcOffsetMs`, in milliseconds) shifts each row-advance
+Program Change during playback earlier by that many milliseconds, to
 compensate for the MuRF's own small delay between receiving a Program
 Change and audibly starting the new pattern — most noticeable on sparse
 patterns. It only affects the row-advance PCs sent during playback, not
-Set Chain's own initial park PC. Since the app's clock is tick-quantized
-(24 ticks per quarter note), the offset is converted to ticks at the
-current BPM and rounds to the nearest tick, so very small values may not
-be achievable at slower tempos.
+Set Chain's own initial park PC.
+
+Row-advance PCs are sent using Web MIDI's own timestamped scheduling
+(`output.send(bytes, timestamp)`) rather than firing immediately from
+inside the tick loop — the same treatment the clock's own 0xF8 pulses
+already got. A real-hardware testing session using sparse "Metronome"
+test patterns found step 1 occasionally re-firing on a chain
+transition, consistent with the row-advance PC previously being sent
+untimed and therefore at the mercy of whatever JS-thread jitter was
+happening at that instant, rather than landing precisely on its
+nominal tick. Scheduling it with an explicit timestamp lets the
+browser's Web MIDI backend realize it precisely instead, and lets
+PC offset apply as a real millisecond shift on that timestamp rather
+than a tick-quantized lookahead.
 
 You'll need to run Set Chain again any time you change the row count, a
 row's type, or which pattern is assigned to a row — those changes don't

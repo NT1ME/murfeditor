@@ -1448,7 +1448,6 @@
         running: false,
         clipRunning: false,
         rowIndex: 0,
-        pcFiredIndex: 0,
         clipIndex: 0,
         patternTick: 0,
         clipTick: 0,
@@ -1626,10 +1625,14 @@
       setTimeout(() => led.classList.remove('flash'), 120);
     }
 
-    function midiSend(bytes) {
+    function midiSend(bytes, timestamp) {
       if (!state.output) return false;
       let ok = false;
-      try { state.output.send(bytes); ok = true; } catch (e) {
+      try {
+        if (timestamp != null) state.output.send(bytes, timestamp);
+        else state.output.send(bytes);
+        ok = true;
+      } catch (e) {
         setStatus('MIDI port stalled — pick the port again');
       }
       if (ok) { flashMidi(); logMidiOut(bytes); }
@@ -2275,8 +2278,8 @@
       midiSend([0xB0 | midiChannelByte(), cc & 0x7F, v]);
     }
 
-    function sendPC(program) {
-      midiSend([0xC0 | midiChannelByte(), program & 0x7F]);
+    function sendPC(program, timestamp) {
+      midiSend([0xC0 | midiChannelByte(), program & 0x7F], timestamp);
     }
 
 
@@ -2311,7 +2314,6 @@
         state.playlist.patternTick = 0;
         state.playlist.clipTick = 0;
         state.playlist.rowIndex = 0;
-        state.playlist.pcFiredIndex = 0;
         state.playlist.clipIndex = 0;
         state.playlist.armedRow = null;
       }
@@ -5842,8 +5844,8 @@
       n = n | 0;
       return (n >= 48 && n <= 60) || (n >= 72 && n <= 84);
     }
-    function pcToSlot(slot) {
-      sendPC((slot | 0) - 1);
+    function pcToSlot(slot, timestamp) {
+      sendPC((slot | 0) - 1, timestamp);
     }
     function formatMusical(ticks) {
       const bars = Math.floor(ticks / 96);
@@ -6163,29 +6165,32 @@
         if (read) read.textContent = barInList + ' / ' + chainTotalBars() + ' bars';
         if (barEl) barEl.style.width = (pTotal ? Math.min(100, (p.patternTick / pTotal) * 100) : 0) + '%';
         document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === hit.i));
-        if (hit.i !== p.rowIndex) p.rowIndex = hit.i;
-        // Row-advance PCs can be sent a little early to offset the MuRF's
-        // own small processing latency between receiving a Program Change
-        // and audibly starting the new pattern - most noticeable on sparse
-        // patterns. pcOffsetMs only affects *when this row-advance PC
-        // fires*, not p.rowIndex/the display above (both stay tied to the
-        // real elapsed tick) or Set Chain's own initial park PC. A
-        // separate fired-row tracker is used as the guard here so it can
-        // run ahead of p.rowIndex without the display jumping early too.
-        // Converted to ticks at the current BPM since the clock is
-        // tick-quantized - fractional-tick offsets round to the nearest
-        // tick.
-        const pcOffsetMs = state.clock.pcOffsetMs || 0;
-        let fireHit = hit;
-        if (pcOffsetMs > 0) {
-          const tickMs = 60000 / Math.max(20, state.clock.bpm || 120) / 24;
-          const offsetTicks = Math.round(pcOffsetMs / tickMs);
-          fireHit = rowAtLocalTick(p.rows, p.rowCount, p.patternTick + offsetTicks, 'bars');
-        }
-        if (fireHit.i !== p.pcFiredIndex) {
-          p.pcFiredIndex = fireHit.i;
+        if (hit.i !== p.rowIndex) {
+          p.rowIndex = hit.i;
           p.preloaded = false;
-          enterPlaylistRow(fireHit.i);
+          // Send this row-advance PC with a precise scheduled timestamp
+          // instead of firing it immediately from inside the tick loop -
+          // the same treatment sendClockAt() already gives clock ticks
+          // (0xF8), which the browser's Web MIDI backend can realize far
+          // more precisely than a bare, untimed send from JS. Without a
+          // timestamp, this PC's actual send moment was at the mercy of
+          // whatever JS-thread jitter was happening when the loop noticed
+          // the row boundary - occasionally enough to land a step early or
+          // late, which is what the sparse "Metronome" pattern testing
+          // surfaced. pcOffsetMs shifts that target time earlier by a real
+          // number of milliseconds (not tick-quantized like the previous
+          // approach), to compensate for the MuRF's own small delay
+          // between receiving a Program Change and audibly starting the
+          // new pattern. A timestamp already in the past (typical, since
+          // we're detecting a boundary that's already due) just sends as
+          // soon as possible per the Web MIDI spec - no different from
+          // before in that case, but a batch of ticks caught up in one
+          // pass now gets spaced at its correct nominal times instead of
+          // bursting out back to back.
+          const tickMs = 60000 / Math.max(20, state.clock.bpm || 120) / 24;
+          const nominalTime = state.clock.origin + hit.start * tickMs;
+          const targetTime = nominalTime - (state.clock.pcOffsetMs || 0);
+          enterPlaylistRow(hit.i, targetTime);
         }
         if (p.patternTick >= pTotal) finishPatternList();
       }
@@ -6213,7 +6218,6 @@
       if (p.playMode === 'loop') {
         p.patternTick = 0;
         p.rowIndex = 0;
-        p.pcFiredIndex = 0;
         p.preloaded = false;
         enterPlaylistRow(0);
         document.querySelectorAll('#plPatRows .pl-row').forEach((r, n) => r.classList.toggle('now', n === 0));
@@ -6258,13 +6262,13 @@
       if (row.type === 'pattern' || row.type === 'rest') return chainSlotForRow(idx);
       return null;
     }
-    function enterPlaylistRow(idx) {
+    function enterPlaylistRow(idx, timestamp) {
       const p = state.playlist;
       const row = p.rows[idx];
       if (!row) return;
       const slot = rowDestSlot(idx);
       if (slot == null) { setStatus('Row ' + (idx + 1) + ' needs a type'); return; }
-      pcToSlot(slot);
+      pcToSlot(slot, timestamp);
       if (p.clipArmed === false) p.needStartAfterTs = false;
       const needStart = row.type === 'pattern' && p.needStartAfterTs && p.running && p.clipArmed !== false;
       if (needStart) {
@@ -6443,7 +6447,6 @@
           p.seqHalted = false;
           p.primedSlot = firstSlot;
           p.rowIndex = 0;
-          p.pcFiredIndex = 0;
           p.patternTick = 0;
           // Bare Program Change to park on the first row's slot - safe
           // again now that this whole function guarantees the MuRF is
@@ -6490,7 +6493,6 @@
         p.patternTick = 0;
         p.clipTick = 0;
         p.rowIndex = 0;
-        p.pcFiredIndex = 0;
         p.clipIndex = 0;
         p.preloaded = false;
         p.needStartAfterTs = false;
