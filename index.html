@@ -679,9 +679,13 @@
     .cell.on.band7 { background: color-mix(in srgb, var(--b8) 72%, #000); }
     .cell.out { opacity: 0.25; } /* beyond band length */
     .cell.seq-steprow.on { background: color-mix(in srgb, #ffffff 65%, #000); }
+    .cell.seq-cc-cell.on { background: color-mix(in srgb, #f5a623 70%, #000); border-radius: 4px; }
     .cell.sustain-block { border-radius: 4px; }
     .cell.mute-block { filter: brightness(0.55) saturate(1.4); }
     .cell.pending { outline: 2px dashed rgba(255,255,255,0.7); z-index: 2; }
+    .grid-label.seq-cc-label { flex-direction: column; gap: 2px; padding: 3px 2px; }
+    .grid-label.seq-cc-label select { width: 100%; font-size: 9px; }
+    .grid-label.seq-cc-label button { font-size: 10px; line-height: 1; padding: 0 4px; }
     .cell.cursor {
       outline: 2px solid rgba(255,255,255,0.55);
       z-index: 2;
@@ -1336,8 +1340,9 @@
           <div class="tgroup edit">
             <span class="tlabel">Edit</span>
             <button type="button" id="btnSeqClearAll">Clear All</button>
+            <button type="button" id="btnSeqAddCcLane">+ CC Lane</button>
           </div>
-          <span class="hint" id="seqHint">Click a step to place a Trigger pulse. Switch to Sustain, click a start step, then shift-click an end step to place a block. Option+Left/Right extends a focused block by one step.</span>
+          <span class="hint" id="seqHint">Click a step to place a Trigger pulse. Switch to Sustain, click a start step, then shift-click an end step to place a block. Option+Left/Right extends a focused block by one step. In a CC lane, click sets a default value, shift-click prompts for an exact one.</span>
         </div>
         <div class="grid-wrap">
           <div class="grid" id="seqGrid"></div>
@@ -1514,7 +1519,12 @@
         pendingBlock: null, // { band, startTick } - Sustain/Mute block start, waiting on a shift-click to size it
         running: false,
         activeSustainBands: [], // band indices with a Sustain note currently held, for clean note-offs on Stop
-        activeMuteBands: []     // same, for Mute notes
+        activeMuteBands: [],    // same, for Mute notes
+        // ccLanes[i] = { cc: <CC number>, points: [{tick, value}, ...] }
+        // Deliberately simple, sparse per-step values (no drawable
+        // automation curves/ramps) - full curve editing is a separate,
+        // deferred "CC Automation" tab. A tick with no point sends nothing.
+        ccLanes: []
       },
       mapExternalMode: false,
       mapExternalTarget: null,
@@ -2331,10 +2341,10 @@
       });
     }
 
-    function sendCC(cc, value) {
+    function sendCC(cc, value, timestamp) {
       if (state.clock && state.clock.recording && (cc === 90)) recordEvent({ kind: 'cc', cc: 90, val: value | 0 });
       const v = Math.max(0, Math.min(127, value | 0));
-      midiSend([0xB0 | midiChannelByte(), cc & 0x7F, v]);
+      midiSend([0xB0 | midiChannelByte(), cc & 0x7F, v], timestamp);
     }
 
     function sendPC(program, timestamp) {
@@ -6756,6 +6766,22 @@
     SEQ_DIVISIONS.push({ name: 'Free (1 tick)', ticks: 1 });
     const SEQ_TRIGGER_GATE_MS = 30; // fixed short gate for a Trigger/Step pulse's Note Off
 
+    const SEQ_CC_TARGETS = [
+      { name: 'Drive', cc: 2 },
+      { name: 'Output', cc: 7 },
+      { name: 'Mix', cc: 8 },
+      { name: 'Envelope', cc: 1 },
+      { name: 'Env Scale', cc: 70 },
+      { name: 'Filter 1 Lvl', cc: 20 },
+      { name: 'Filter 2 Lvl', cc: 21 },
+      { name: 'Filter 3 Lvl', cc: 22 },
+      { name: 'Filter 4 Lvl', cc: 23 },
+      { name: 'Filter 5 Lvl', cc: 24 },
+      { name: 'Filter 6 Lvl', cc: 25 },
+      { name: 'Filter 7 Lvl', cc: 26 },
+      { name: 'Filter 8 Lvl', cc: 27 }
+    ];
+
     // Ticks per grid column right now. Snap off forces the finest (1-tick)
     // resolution regardless of which division is selected, as a fast
     // override rather than requiring you to switch the dropdown to Free.
@@ -6955,6 +6981,70 @@
         cell.addEventListener('click', () => seqStepRowClick(col));
         grid.appendChild(cell);
       }
+
+      sq.ccLanes.forEach((lane, laneIdx) => {
+        const label = document.createElement('div');
+        label.className = 'grid-label seq-cc-label';
+        const sel = document.createElement('select');
+        SEQ_CC_TARGETS.forEach(t => {
+          const o = document.createElement('option');
+          o.value = t.cc;
+          o.textContent = t.name;
+          if (t.cc === lane.cc) o.selected = true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change', () => { lane.cc = parseInt(sel.value, 10); });
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.textContent = '×';
+        rm.title = 'Remove this CC lane';
+        rm.addEventListener('click', () => seqRemoveCcLane(laneIdx));
+        label.appendChild(sel);
+        label.appendChild(rm);
+        grid.appendChild(label);
+        for (let col = 0; col < vis; col++) {
+          const tick = seqColToTick(col);
+          const point = lane.points.find(p => p.tick === tick);
+          const cell = document.createElement('div');
+          cell.className = 'cell seq-cc-cell';
+          if (point) { cell.classList.add('on'); cell.title = String(point.value); }
+          cell.addEventListener('click', (e) => seqCcCellClick(laneIdx, col, e.shiftKey));
+          grid.appendChild(cell);
+        }
+      });
+    }
+
+    function seqAddCcLane() {
+      state.sequencer.ccLanes.push({ cc: SEQ_CC_TARGETS[0].cc, points: [] });
+      renderSeqGrid();
+    }
+    function seqRemoveCcLane(idx) {
+      state.sequencer.ccLanes.splice(idx, 1);
+      renderSeqGrid();
+    }
+    function seqCcCellClick(laneIdx, col, shiftKey) {
+      const lane = state.sequencer.ccLanes[laneIdx];
+      if (!lane) return;
+      const tick = seqColToTick(col);
+      const existingIdx = lane.points.findIndex(p => p.tick === tick);
+      if (shiftKey) {
+        const cur = existingIdx >= 0 ? lane.points[existingIdx].value : '';
+        const input = window.prompt('CC value (0-127), blank to clear:', String(cur));
+        if (input == null) return; // cancelled
+        if (input.trim() === '') {
+          if (existingIdx >= 0) lane.points.splice(existingIdx, 1);
+          renderSeqGrid();
+          return;
+        }
+        const v = Math.max(0, Math.min(127, parseInt(input, 10) | 0));
+        if (existingIdx >= 0) lane.points[existingIdx].value = v;
+        else lane.points.push({ tick: tick, value: v });
+        renderSeqGrid();
+        return;
+      }
+      if (existingIdx >= 0) { lane.points.splice(existingIdx, 1); renderSeqGrid(); return; }
+      lane.points.push({ tick: tick, value: 100 });
+      renderSeqGrid();
     }
 
     function seqSetDivision(index) {
@@ -6988,6 +7078,7 @@
       const sq = state.sequencer;
       sq.bands.forEach(row => { row.pulses = []; row.blocks = []; row.muteBlocks = []; });
       sq.stepRow.pulses = [];
+      sq.ccLanes.forEach(lane => { lane.points = []; });
       sq.pendingBlock = null;
       renderSeqGrid();
       setStatus('Sequencer cleared');
@@ -7071,6 +7162,10 @@
           }
         });
       }
+      sq.ccLanes.forEach(lane => {
+        const point = lane.points.find(p => p.tick === tick);
+        if (point) sendCC(lane.cc, point.value, now);
+      });
     }
 
     function initSequencer() {
@@ -7081,6 +7176,7 @@
       document.getElementById('btnSeqPlay')?.addEventListener('click', seqPlay);
       document.getElementById('btnSeqStop')?.addEventListener('click', seqStop);
       document.getElementById('btnSeqClearAll')?.addEventListener('click', seqClearAll);
+      document.getElementById('btnSeqAddCcLane')?.addEventListener('click', seqAddCcLane);
       const divSel = document.getElementById('seqDivision');
       if (divSel) {
         divSel.innerHTML = '';
