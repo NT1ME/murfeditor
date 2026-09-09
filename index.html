@@ -2279,6 +2279,7 @@
 
     function haltPattern() {
       state.clock.halted = true;
+      state.clock.haltedAt = performance.now();
       sendCC(20, 0);
       flashBtn('btnHaltPattern');
       setStatus('Halt (CC20 @ 0)');
@@ -6303,6 +6304,13 @@
     // both Halt and Pause All, and a manually-changed Division carried
     // through Set Chain and Pause All - all held the right division.
     const DIVISION_LOCK_DELAY_MS = 200;
+    // How long a genuine Halt needs to have been sitting before Set Chain's
+    // own Start can reliably clear it. Real-hardware testing found a ~3.6s
+    // gap broke MIDI outright, while every gap of 24s or more (five
+    // separate runs, up to ~62s) came out clean. 24000 is the shortest gap
+    // actually confirmed safe, not a guess - see the reasoning in
+    // setChainNow below for the full account.
+    const HALT_SETTLE_MS = 24000;
     let setChainBusy = false;
     function setChainNow() {
       const p = state.playlist;
@@ -6344,7 +6352,23 @@
       // row bookkeeping moments later regardless, so using Start here costs
       // nothing structurally - this is a real hypothesis to test, not
       // another timing guess.
+      //
+      // Even Start wasn't always enough on its own: a follow-up round of
+      // real-hardware tests found the deciding factor was how long the
+      // Halt had been sitting before Set Chain's own Start tried to clear
+      // it. A ~3.6s gap broke MIDI outright; every gap of 24s or longer
+      // (five separate runs, up to ~62s) came out clean - same park
+      // success, same division retention, survived Pause All/Continue
+      // cycles and heavy unrelated CC traffic. HALT_SETTLE_MS below is set
+      // to the shortest gap actually confirmed safe, not a fresh guess.
       setChainBusy = true;
+      const sinceHalt = state.clock.haltedAt != null ? (performance.now() - state.clock.haltedAt) : Infinity;
+      const settleWait = Math.max(0, HALT_SETTLE_MS - sinceHalt);
+      if (settleWait > 0) setStatus('Letting Halt settle before Set Chain…');
+      setTimeout(() => { beginSetChainSequence(); }, settleWait);
+    }
+    function beginSetChainSequence() {
+      const p = state.playlist;
       clockPlay(true);
       setStatus('Locking division…');
       setTimeout(() => {

@@ -211,6 +211,16 @@ three legitimate methods first.
   Start's more thorough reset is the current best guess at why the
   audible Halt cleared either way but something governing Program Change
   acceptance stayed stuck only after Continue.
+- **Set Chain also waits out a recent Halt before sending its Start.**
+  Even the Continue→Start fix above wasn't reliable on its own — a
+  further round of real-hardware testing found the deciding factor was
+  how long the Halt had been sitting before Set Chain tried to clear it.
+  A gap of roughly 3.6 seconds broke MIDI outright; every gap of 24
+  seconds or longer (five separate runs, up to about a minute) came out
+  clean. So Set Chain now tracks when the last genuine Halt happened and,
+  if it's been less than 24 seconds, waits out the remainder — showing
+  "Letting Halt settle before Set Chain…" — before sending anything. If
+  no Halt has happened yet this session, this adds no delay at all.
 - **Reset Lists**, the only one of the two reset buttons that re-parks a
   chain on its first row, sends that Program Change *before* sending Halt,
   never after — so the re-park always lands on a device that's merely
