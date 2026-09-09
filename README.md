@@ -192,15 +192,25 @@ three legitimate methods first.
 
 **What the app does to protect you from this automatically:**
 
-- **Set Chain** always sends a Continue message before it does anything
+- **Set Chain** always sends a Start message before it does anything
   else, every single time, whether or not the app believes the device is
   currently halted. This is deliberate: the app's own internal "is it
   halted" flag is just in-memory state — it doesn't survive a page reload,
   and there's no way to ask the actual hardware what state it's really in.
   Rather than trust a flag that can silently go stale, Set Chain just
   always clears a halt unconditionally before it dumps anything. Sending
-  Continue when the device wasn't actually halted is harmless — it's just
-  a normal resume — so there's no downside to doing it every time.
+  Start when the device wasn't actually halted is harmless — it's just
+  a normal restart — so there's no downside to doing it every time. Start
+  rather than Continue specifically: real-hardware testing found a MuRF
+  that had been genuinely Halted earlier in the same power-on session,
+  even once and even if cleared afterward by hand, could come out of a
+  later Set Chain with its park Program Change silently ignored — only a
+  full power cycle reliably fixed it. Continue and Start both clear
+  genuine Halt, but Continue is the lighter of the two (it resumes from
+  wherever the tick counter already was, where Start resets it to zero);
+  Start's more thorough reset is the current best guess at why the
+  audible Halt cleared either way but something governing Program Change
+  acceptance stayed stuck only after Continue.
 - **Reset Lists**, the only one of the two reset buttons that re-parks a
   chain on its first row, sends that Program Change *before* sending Halt,
   never after — so the re-park always lands on a device that's merely
@@ -260,8 +270,8 @@ exact pattern: Set Chain's Division resend landing 0–1ms after Continue
 in every run, including ones that held the right division — and in
 those, the real lock had been set moments earlier by hand, over a second
 into separate live playback, not by Set Chain's own resend at all. Set
-Chain now waits about 200ms after Continue before sending its Division
-resend, specifically to give real ticks time to flow first — see the
+Chain now waits about 200ms after its opening Start before sending its
+Division resend, specifically to give real ticks time to flow first — see the
 Playlist section below for where that sits in the full sequence. If
 you're ever setting Division by hand outside of Set Chain and want it to
 stick for a chain, do it a beat or two into already-running playback, not

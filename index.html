@@ -6287,7 +6287,8 @@
       }
       return true;
     }
-    // How long Set Chain waits after Continue before sending CC9. Real-
+    // How long Set Chain waits after its opening transport message before
+    // sending CC9 (Start, as of the Continue->Start change below). Real-
     // hardware logs showed Set Chain's own Division resend landing 0-1ms
     // after Continue in every tested run, including the one run that held
     // the right division - and in that run, the lock had actually been
@@ -6316,19 +6317,38 @@
       // right after halting the MuRF manually reproduced exactly this: the
       // flag came back false, so this guard never fired, and the dump went
       // straight into a device that was still genuinely halted - full MIDI
-      // breakage, same as every other case this session. Sending Continue
+      // breakage, same as every other case this session. Sending Start
       // when the MuRF *wasn't* actually halted is harmless (just a normal
-      // resume), so there's no reason to gate this on a flag we can't fully
+      // restart), so there's no reason to gate this on a flag we can't fully
       // trust - the MuRF has no real "pause" (Halt is CC20/Filter 1 Level
       // repurposed to freeze the pattern), and the addendum says that only
       // clears on Rate change, Rate CV, or MIDI Start/Continue - never on
       // SysEx or Program Change, which is exactly what a dump is about to
       // send.
+      //
+      // Start, not Continue: real-hardware testing (round of 9 tests) found
+      // that a MuRF which had been genuinely Halted earlier in the same
+      // power-on session - even once, even if the Halt was cleared
+      // afterward by a manual Rate-knob turn - would come out of a
+      // subsequent Set Chain in a half-broken state: the park Program
+      // Change silently ignored (device keeps playing whatever pattern it
+      // already had), no sync/desync LED flicker during the dump burst.
+      // Only a full power cycle reliably cleared it. Continue and Start are
+      // both documented to clear genuine Halt, but Continue is the lighter
+      // of the two - it deliberately resumes from wherever c.tick already
+      // was, where Start resets tick/seqStep to zero. If the MuRF's own
+      // firmware does a more thorough internal reset on Start than on
+      // Continue, that would explain why the audible Halt cleared fine
+      // either way but something governing Program Change acceptance
+      // stayed stuck only after Continue. Set Chain re-zeroes its own tick/
+      // row bookkeeping moments later regardless, so using Start here costs
+      // nothing structurally - this is a real hypothesis to test, not
+      // another timing guess.
       setChainBusy = true;
-      clockPlay(false);
+      clockPlay(true);
       setStatus('Locking division…');
       setTimeout(() => {
-        // CC9 (Division) here, after a real gap since Continue (see
+        // CC9 (Division) here, after a real gap since Start (see
         // DIVISION_LOCK_DELAY_MS above), while the clock is still
         // genuinely ticking - not after the Stop below.
         applyDivision();
