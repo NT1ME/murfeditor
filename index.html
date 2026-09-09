@@ -558,6 +558,7 @@
       border-radius: 6px;
       border: 1px solid var(--border);
     }
+    .tgroup[hidden] { display: none; }
     .tgroup.lib { flex-wrap: wrap; }
     .tgroup.edit { background: #2a2622; border-color: #5a3d28; }
     .tgroup.set { background: #22282a; border-color: #3d5558; }
@@ -679,6 +680,7 @@
     .cell.out { opacity: 0.25; } /* beyond band length */
     .cell.seq-steprow.on { background: color-mix(in srgb, #ffffff 65%, #000); }
     .cell.sustain-block { border-radius: 4px; }
+    .cell.mute-block { filter: brightness(0.55) saturate(1.4); }
     .cell.pending { outline: 2px dashed rgba(255,255,255,0.7); z-index: 2; }
     .cell.cursor {
       outline: 2px solid rgba(255,255,255,0.55);
@@ -1311,7 +1313,12 @@
       <!-- ========== SEQUENCER TAB ========== -->
       <div class="view" id="view-sequencer">
         <div class="pattern-toolbar">
-          <div class="tgroup mode">
+          <div class="tgroup view">
+            <span class="tlabel">View</span>
+            <button type="button" id="btnSeqViewTrigSus" class="on">Trigger/Sustain</button>
+            <button type="button" id="btnSeqViewMute">Mute</button>
+          </div>
+          <div class="tgroup mode" id="seqModeGroup">
             <span class="tlabel">Place</span>
             <button type="button" id="btnSeqModeTrigger" class="on">Trigger</button>
             <button type="button" id="btnSeqModeSustain">Sustain</button>
@@ -1491,16 +1498,23 @@
         seqHalted: false
       },
       sequencer: {
-        mode: 'trigger', // 'trigger' | 'sustain' - which type a click places
+        view: 'trigsus', // 'trigsus' | 'mute' - which sub-view is showing; Step is shared by both
+        mode: 'trigger', // 'trigger' | 'sustain' - which type a click places (trigsus view only)
         totalSteps: 64,  // visible grid columns; column width = current division
         divisionIndex: 6, // index into SEQ_DIVISIONS - default 16th note straight
         snap: true, // off = ignore the division above, place at raw 1-tick resolution
-        // bands[b] = { pulses: [absoluteTick,...], blocks: [{start: absoluteTick, len: ticks},...] }
-        bands: Array.from({ length: 8 }, () => ({ pulses: [], blocks: [] })),
-        stepRow: { pulses: [] }, // absolute ticks, same as bands[*].pulses
-        pendingBlock: null, // { band, startTick } - Sustain block start, waiting on a shift-click to size it
+        // bands[b]: pulses = Trigger (absoluteTick,...); blocks = Sustain
+        // ({start: absoluteTick, len: ticks},...); muteBlocks = Mute, same
+        // shape as blocks but independent - Mute rides on top of a live,
+        // still clock-synced pattern rather than taking over the band the
+        // way Trigger/Sustain do, so the two don't interact or block each
+        // other.
+        bands: Array.from({ length: 8 }, () => ({ pulses: [], blocks: [], muteBlocks: [] })),
+        stepRow: { pulses: [] }, // absolute ticks, shared by both sub-views
+        pendingBlock: null, // { band, startTick } - Sustain/Mute block start, waiting on a shift-click to size it
         running: false,
-        activeSustainBands: [] // band indices with a Sustain note currently held, for clean note-offs on Stop
+        activeSustainBands: [], // band indices with a Sustain note currently held, for clean note-offs on Stop
+        activeMuteBands: []     // same, for Mute notes
       },
       mapExternalMode: false,
       mapExternalTarget: null,
@@ -6820,9 +6834,62 @@
       renderSeqGrid();
     }
 
+    function seqBandMuteBlockAt(band, tick) {
+      return state.sequencer.bands[band].muteBlocks.find(blk => tick >= blk.start && tick < blk.start + blk.len);
+    }
+
+    // Mute has no Trigger-equivalent and doesn't interact with Sustain/
+    // Trigger content at all - it rides on top of a still-live, clock-
+    // synced pattern rather than taking the band over the way Trigger/
+    // Sustain do, so placement here only ever checks against other Mute
+    // blocks on the same band.
+    function seqMuteClick(band, col, shiftKey) {
+      const sq = state.sequencer;
+      const tick = seqColToTick(col);
+      const row = sq.bands[band];
+      const existing = seqBandMuteBlockAt(band, tick);
+      if (existing && !shiftKey) {
+        row.muteBlocks = row.muteBlocks.filter(b => b !== existing);
+        sq.pendingBlock = null;
+        renderSeqGrid();
+        return;
+      }
+      if (shiftKey && sq.pendingBlock && sq.pendingBlock.band === band) {
+        const stepTicks = seqTicksPerStep();
+        const start = Math.min(sq.pendingBlock.startTick, tick);
+        const endTick = Math.max(sq.pendingBlock.startTick, tick);
+        const len = (endTick - start) + stepTicks;
+        if (row.muteBlocks.some(b => start < b.start + b.len && b.start < start + len)) {
+          setStatus('Blocked - range already holds a Mute block'); sq.pendingBlock = null; renderSeqGrid(); return;
+        }
+        row.muteBlocks.push({ start: start, len: len });
+        sq.pendingBlock = null;
+        renderSeqGrid();
+        return;
+      }
+      sq.pendingBlock = { band: band, startTick: tick };
+      renderSeqGrid();
+    }
+
     function seqCellClick(band, col, shiftKey) {
-      if (state.sequencer.mode === 'sustain') seqSustainClick(band, col, shiftKey);
+      const sq = state.sequencer;
+      if (sq.view === 'mute') { seqMuteClick(band, col, shiftKey); return; }
+      if (sq.mode === 'sustain') seqSustainClick(band, col, shiftKey);
       else seqToggleTrigger(band, col);
+    }
+
+    function seqSetView(view) {
+      const sq = state.sequencer;
+      sq.view = view;
+      sq.pendingBlock = null;
+      document.getElementById('btnSeqViewTrigSus')?.classList.toggle('on', view === 'trigsus');
+      document.getElementById('btnSeqViewMute')?.classList.toggle('on', view === 'mute');
+      const modeGroup = document.getElementById('seqModeGroup');
+      if (modeGroup) modeGroup.hidden = view === 'mute';
+      renderSeqGrid();
+      const hint = document.getElementById('seqHint');
+      if (hint && view === 'mute') hint.textContent = 'Click a start step, then shift-click an end step in the same band to place a Mute block. Click an existing block to remove it. Mute rides on top of the live pattern - it does not stop the clock.';
+      else if (hint) seqSetMode(state.sequencer.mode);
     }
 
     function renderSeqGrid() {
@@ -6854,12 +6921,21 @@
           const tick = seqColToTick(col);
           const cell = document.createElement('div');
           cell.className = 'cell band' + b;
-          const blk = seqBandBlockAt(b, tick);
-          if (seqBandHasPulse(b, tick)) cell.classList.add('on');
-          if (blk) {
-            cell.classList.add('on', 'sustain-block');
-            if (blk.start === tick) cell.classList.add('block-start');
-            if (blk.start + blk.len <= tick + stepTicks) cell.classList.add('block-end');
+          if (sq.view === 'mute') {
+            const mblk = seqBandMuteBlockAt(b, tick);
+            if (mblk) {
+              cell.classList.add('on', 'sustain-block', 'mute-block');
+              if (mblk.start === tick) cell.classList.add('block-start');
+              if (mblk.start + mblk.len <= tick + stepTicks) cell.classList.add('block-end');
+            }
+          } else {
+            const blk = seqBandBlockAt(b, tick);
+            if (seqBandHasPulse(b, tick)) cell.classList.add('on');
+            if (blk) {
+              cell.classList.add('on', 'sustain-block');
+              if (blk.start === tick) cell.classList.add('block-start');
+              if (blk.start + blk.len <= tick + stepTicks) cell.classList.add('block-end');
+            }
           }
           if (sq.pendingBlock && sq.pendingBlock.band === b && sq.pendingBlock.startTick === tick) cell.classList.add('pending');
           cell.addEventListener('click', (e) => seqCellClick(b, col, e.shiftKey));
@@ -6910,7 +6986,7 @@
 
     function seqClearAll() {
       const sq = state.sequencer;
-      sq.bands.forEach(row => { row.pulses = []; row.blocks = []; });
+      sq.bands.forEach(row => { row.pulses = []; row.blocks = []; row.muteBlocks = []; });
       sq.stepRow.pulses = [];
       sq.pendingBlock = null;
       renderSeqGrid();
@@ -6922,6 +6998,8 @@
       sq.running = false;
       sq.activeSustainBands.forEach(b => sendNoteOff(NOTE_MAPS.sustained[b]));
       sq.activeSustainBands = [];
+      sq.activeMuteBands.forEach(b => sendNoteOff(NOTE_MAPS.mute[b]));
+      sq.activeMuteBands = [];
       setStatus('Sequencer stopped');
     }
 
@@ -6981,10 +7059,23 @@
             sq.activeSustainBands = sq.activeSustainBands.filter(x => x !== b);
           }
         });
+        row.muteBlocks.forEach(blk => {
+          const note = NOTE_MAPS.mute[b];
+          if (blk.start === tick) {
+            sendNoteOn(note, 100, now);
+            if (!sq.activeMuteBands.includes(b)) sq.activeMuteBands.push(b);
+          }
+          if (blk.start + blk.len === tick) {
+            sendNoteOff(note, now);
+            sq.activeMuteBands = sq.activeMuteBands.filter(x => x !== b);
+          }
+        });
       }
     }
 
     function initSequencer() {
+      document.getElementById('btnSeqViewTrigSus')?.addEventListener('click', () => seqSetView('trigsus'));
+      document.getElementById('btnSeqViewMute')?.addEventListener('click', () => seqSetView('mute'));
       document.getElementById('btnSeqModeTrigger')?.addEventListener('click', () => seqSetMode('trigger'));
       document.getElementById('btnSeqModeSustain')?.addEventListener('click', () => seqSetMode('sustain'));
       document.getElementById('btnSeqPlay')?.addEventListener('click', seqPlay);
