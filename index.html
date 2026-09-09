@@ -683,6 +683,7 @@
     .cell.sustain-block { border-radius: 4px; }
     .cell.mute-block { filter: brightness(0.55) saturate(1.4); }
     .cell.pending { outline: 2px dashed rgba(255,255,255,0.7); z-index: 2; }
+    .cell.focused { outline: 2px solid #4ec9ff; z-index: 2; box-shadow: 0 0 4px rgba(78,201,255,0.8); }
     .grid-label.seq-cc-label { flex-direction: column; gap: 2px; padding: 3px 2px; }
     .grid-label.seq-cc-label select { width: 100%; font-size: 9px; }
     .grid-label.seq-cc-label button { font-size: 10px; line-height: 1; padding: 0 4px; }
@@ -1331,6 +1332,7 @@
             <span class="tlabel">Transport</span>
             <button type="button" id="btnSeqPlay">Play</button>
             <button type="button" id="btnSeqStop">Stop</button>
+            <button type="button" id="btnSeqRecord" title="Arm, then Play to capture this run as a clip">Rec</button>
           </div>
           <div class="tgroup division">
             <span class="tlabel">Division</span>
@@ -1517,6 +1519,7 @@
         bands: Array.from({ length: 8 }, () => ({ pulses: [], blocks: [], muteBlocks: [] })),
         stepRow: { pulses: [] }, // absolute ticks, shared by both sub-views
         pendingBlock: null, // { band, startTick } - Sustain/Mute block start, waiting on a shift-click to size it
+        focusedBlock: null, // { band, kind: 'blocks'|'muteBlocks', start } - resizable with Option+Left/Right
         running: false,
         activeSustainBands: [], // band indices with a Sustain note currently held, for clean note-offs on Stop
         activeMuteBands: [],    // same, for Mute notes
@@ -4671,6 +4674,8 @@
       if (arm) { arm.classList.toggle('on', c.armed); arm.textContent = 'Clock'; }
       const rec = document.getElementById('btnRecord');
       if (rec) { rec.classList.toggle('on', c.recArm || c.recording); rec.textContent = c.recording ? 'REC' : (c.recArm ? 'Arm' : 'Rec'); }
+      const seqRec = document.getElementById('btnSeqRecord');
+      if (seqRec) { seqRec.classList.toggle('on', c.recArm || c.recording); seqRec.textContent = c.recording ? 'REC' : (c.recArm ? 'Arm' : 'Rec'); }
       const pc = document.getElementById('btnPlayClip');
       if (pc) pc.classList.toggle('on', c.playClip);
       const pl = document.getElementById('btnPlay');
@@ -5336,6 +5341,11 @@
         if ((e.key === '\\' || e.code === 'Backslash') && !isTextEntry(e.target)) {
           e.preventDefault();
           punchOut();
+          return;
+        }
+        if (e.altKey && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && activeTab() === 'sequencer' && !isTextEntry(e.target)) {
+          e.preventDefault();
+          seqResizeFocusedBlock(e.key === 'ArrowRight' ? 1 : -1);
           return;
         }
         if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 'b' || e.key === 'B') && !isTextEntry(e.target)) {
@@ -6824,15 +6834,23 @@
       renderSeqGrid();
     }
 
-    function seqSustainClick(band, col, shiftKey) {
+    function seqSustainClick(band, col, shiftKey, altKey) {
       const sq = state.sequencer;
       const tick = seqColToTick(col);
       const existing = seqBandBlockAt(band, tick);
+      if (existing && altKey && !shiftKey) {
+        // Option+click focuses an existing block for Option+Left/Right
+        // resizing, without removing or resizing it itself.
+        sq.focusedBlock = { band: band, kind: 'blocks', start: existing.start };
+        renderSeqGrid();
+        return;
+      }
       if (existing && !shiftKey) {
         // Plain click on an existing block removes it.
         const row = sq.bands[band];
         row.blocks = row.blocks.filter(b => b !== existing);
         sq.pendingBlock = null;
+        if (sq.focusedBlock && sq.focusedBlock.kind === 'blocks' && sq.focusedBlock.band === band && sq.focusedBlock.start === existing.start) sq.focusedBlock = null;
         renderSeqGrid();
         return;
       }
@@ -6852,6 +6870,7 @@
         }
         row.blocks.push({ start: start, len: len });
         sq.pendingBlock = null;
+        sq.focusedBlock = { band: band, kind: 'blocks', start: start };
         renderSeqGrid();
         return;
       }
@@ -6869,14 +6888,20 @@
     // synced pattern rather than taking the band over the way Trigger/
     // Sustain do, so placement here only ever checks against other Mute
     // blocks on the same band.
-    function seqMuteClick(band, col, shiftKey) {
+    function seqMuteClick(band, col, shiftKey, altKey) {
       const sq = state.sequencer;
       const tick = seqColToTick(col);
       const row = sq.bands[band];
       const existing = seqBandMuteBlockAt(band, tick);
+      if (existing && altKey && !shiftKey) {
+        sq.focusedBlock = { band: band, kind: 'muteBlocks', start: existing.start };
+        renderSeqGrid();
+        return;
+      }
       if (existing && !shiftKey) {
         row.muteBlocks = row.muteBlocks.filter(b => b !== existing);
         sq.pendingBlock = null;
+        if (sq.focusedBlock && sq.focusedBlock.kind === 'muteBlocks' && sq.focusedBlock.band === band && sq.focusedBlock.start === existing.start) sq.focusedBlock = null;
         renderSeqGrid();
         return;
       }
@@ -6890,6 +6915,7 @@
         }
         row.muteBlocks.push({ start: start, len: len });
         sq.pendingBlock = null;
+        sq.focusedBlock = { band: band, kind: 'muteBlocks', start: start };
         renderSeqGrid();
         return;
       }
@@ -6897,11 +6923,40 @@
       renderSeqGrid();
     }
 
-    function seqCellClick(band, col, shiftKey) {
+    function seqCellClick(band, col, shiftKey, altKey) {
       const sq = state.sequencer;
-      if (sq.view === 'mute') { seqMuteClick(band, col, shiftKey); return; }
-      if (sq.mode === 'sustain') seqSustainClick(band, col, shiftKey);
+      if (sq.view === 'mute') { seqMuteClick(band, col, shiftKey, altKey); return; }
+      if (sq.mode === 'sustain') seqSustainClick(band, col, shiftKey, altKey);
       else seqToggleTrigger(band, col);
+    }
+
+    // Option+Left/Right grows or shrinks the focused block by one step,
+    // from whichever end the resize doesn't collide with; blocked (no-op)
+    // if growth would run into other content on the same band.
+    function seqResizeFocusedBlock(dir) {
+      const sq = state.sequencer;
+      const fb = sq.focusedBlock;
+      if (!fb) { setStatus('Option+click a block first to focus it'); return; }
+      const row = sq.bands[fb.band];
+      const list = fb.kind === 'muteBlocks' ? row.muteBlocks : row.blocks;
+      const blk = list.find(b => b.start === fb.start);
+      if (!blk) { sq.focusedBlock = null; return; }
+      const stepTicks = seqTicksPerStep();
+      if (dir > 0) {
+        const newLen = blk.len + stepTicks;
+        const newEnd = blk.start + newLen;
+        const collides = list.some(b => b !== blk && blk.start < b.start + b.len && b.start < newEnd);
+        if (fb.kind === 'blocks' && row.pulses.some(p => p >= blk.start + blk.len && p < newEnd)) {
+          setStatus('Blocked - growing would collide with a Trigger'); return;
+        }
+        if (collides) { setStatus('Blocked - growing would collide with another block'); return; }
+        blk.len = newLen;
+      } else {
+        const newLen = blk.len - stepTicks;
+        if (newLen < stepTicks) { setStatus('Already at minimum length'); return; }
+        blk.len = newLen;
+      }
+      renderSeqGrid();
     }
 
     function seqSetView(view) {
@@ -6947,12 +7002,14 @@
           const tick = seqColToTick(col);
           const cell = document.createElement('div');
           cell.className = 'cell band' + b;
+          const expectedKind = sq.view === 'mute' ? 'muteBlocks' : 'blocks';
           if (sq.view === 'mute') {
             const mblk = seqBandMuteBlockAt(b, tick);
             if (mblk) {
               cell.classList.add('on', 'sustain-block', 'mute-block');
               if (mblk.start === tick) cell.classList.add('block-start');
               if (mblk.start + mblk.len <= tick + stepTicks) cell.classList.add('block-end');
+              if (sq.focusedBlock && sq.focusedBlock.kind === expectedKind && sq.focusedBlock.band === b && sq.focusedBlock.start === mblk.start) cell.classList.add('focused');
             }
           } else {
             const blk = seqBandBlockAt(b, tick);
@@ -6961,10 +7018,11 @@
               cell.classList.add('on', 'sustain-block');
               if (blk.start === tick) cell.classList.add('block-start');
               if (blk.start + blk.len <= tick + stepTicks) cell.classList.add('block-end');
+              if (sq.focusedBlock && sq.focusedBlock.kind === expectedKind && sq.focusedBlock.band === b && sq.focusedBlock.start === blk.start) cell.classList.add('focused');
             }
           }
           if (sq.pendingBlock && sq.pendingBlock.band === b && sq.pendingBlock.startTick === tick) cell.classList.add('pending');
-          cell.addEventListener('click', (e) => seqCellClick(b, col, e.shiftKey));
+          cell.addEventListener('click', (e) => seqCellClick(b, col, e.shiftKey, e.altKey));
           grid.appendChild(cell);
         }
       }
@@ -7175,6 +7233,7 @@
       document.getElementById('btnSeqModeSustain')?.addEventListener('click', () => seqSetMode('sustain'));
       document.getElementById('btnSeqPlay')?.addEventListener('click', seqPlay);
       document.getElementById('btnSeqStop')?.addEventListener('click', seqStop);
+      document.getElementById('btnSeqRecord')?.addEventListener('click', punchOut);
       document.getElementById('btnSeqClearAll')?.addEventListener('click', seqClearAll);
       document.getElementById('btnSeqAddCcLane')?.addEventListener('click', seqAddCcLane);
       const divSel = document.getElementById('seqDivision');
