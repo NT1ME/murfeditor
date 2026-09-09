@@ -2389,6 +2389,7 @@
         state.playlist.clipIndex = 0;
         state.playlist.armedRow = null;
       }
+      if (state.sequencer && typeof seqStopSilent === 'function') seqStopSilent();
     }
     function resetAll() {
       // No Program Change, ever - this is the general-purpose kill switch,
@@ -4977,6 +4978,7 @@
         state.playlist.running = false;
         state.playlist.clipRunning = false;
       }
+      if (state.sequencer && typeof seqStopSilent === 'function') seqStopSilent();
     }
     function punchOut() {
       const c = state.clock;
@@ -5230,6 +5232,7 @@
           state.playlist.patternTick = 0;
           state.playlist.clipTick = 0;
         }
+        if (state.sequencer && typeof seqStopSilent === 'function') seqStopSilent();
         stopTimer();
         persistSession();
         buildGrid();
@@ -7142,13 +7145,19 @@
       setStatus('Sequencer cleared');
     }
 
-    function seqStop() {
+    // Shared by seqStop() and every other "stop everything" path
+    // (clockStopDevice, resetTransportAndState, project load) - no status
+    // message of its own, since those callers set their own.
+    function seqStopSilent() {
       const sq = state.sequencer;
       sq.running = false;
       sq.activeSustainBands.forEach(b => sendNoteOff(NOTE_MAPS.sustained[b]));
       sq.activeSustainBands = [];
       sq.activeMuteBands.forEach(b => sendNoteOff(NOTE_MAPS.mute[b]));
       sq.activeMuteBands = [];
+    }
+    function seqStop() {
+      seqStopSilent();
       setStatus('Sequencer stopped');
     }
 
@@ -7179,6 +7188,13 @@
     function seqOnTick() {
       const sq = state.sequencer;
       if (!sq.running) return;
+      // A SysEx dump (e.g. from Set Chain) may be physically in flight -
+      // see the matching guard in startTimer(). That guard only covers the
+      // raw clock byte; without this one, a Sequencer note/CC send landing
+      // mid-dump could corrupt it and wedge the MuRF the same way. Skip the
+      // whole tick and let a held Sustain/Mute note resync a beat late
+      // rather than risk that.
+      if (performance.now() < (state.clock.sysexBusyUntil || 0)) return;
       const stepTicks = seqTicksPerStep();
       const cycleTicks = Math.max(1, Math.round(sq.totalSteps * stepTicks));
       const tick = state.clock.tick % cycleTicks;
