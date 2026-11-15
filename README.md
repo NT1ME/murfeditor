@@ -36,7 +36,9 @@ animation. All the slots this app treats as "editable" for patterns are
 | Stack | Mute, Triggered, and Sustain rows all active simultaneously, plus Step. |
 | Clips | Record and play back a take of your performance and transport actions. Loop, Once, or Once + Halt for that take. Tap tempo lives here too. |
 | Playlist | Two independent lists that share the same app clock: a pattern chain and a clip list, so you can sequence a whole set of patterns and layer a performance clip on top. |
+| Sequencer | An 8-band × up-to-64-step grid for programming Trigger, Sustain, and Mute note data ahead of time, plus CC automation lanes — a clip-producing alternative to playing Keyboard/Stack by hand or chaining patterns. |
 | Log | A filtered, readable record of every meaningful MIDI message the app has actually sent, for troubleshooting. |
+| MIDI | Lists MIDI input/output ports with Track/Sync/Remote roles, and shows every external-controller mapping made with the header's Map External button. |
 
 ---
 
@@ -52,10 +54,11 @@ that channel — this CC102 message is always sent on channel 1 itself,
 regardless of what channel you're switching to or from, because the MuRF
 listens for CC102 on channel 1 specifically.
 
-**Project** — Save Project downloads the current state of the whole app —
-pattern editor contents, every panel control, the pattern library, saved
-rows, saved clips, the digit map, clock/division settings, and the entire
-Playlist — as one JSON file. Open Project loads one back in.
+**Project** — Save Project (Cmd+Shift+S) downloads the current state of the
+whole app — pattern editor contents, every panel control, the pattern
+library, saved rows, saved clips, the digit map, clock/division settings,
+the entire Playlist, and your external MIDI-controller mappings and port
+roles — as one JSON file. Open Project (Cmd+Shift+O) loads one back in.
 
 **A caveat worth knowing:** loading a project does re-transmit most of the
 Main tab's panel controls live over MIDI if a port is currently selected —
@@ -82,7 +85,8 @@ want that, disconnect the MIDI port first, load the project, then reconnect.
   and finalizes the take if one is in progress.
 - **Play clip** — plays the currently loaded recorded clip on top of
   whatever pattern is already active.
-- **BPM** — 20 to 300, drives the app's internal tick timing.
+- **BPM** — 20 to 300, drives the app's internal tick timing. Cmd+[ and
+  Cmd+] nudge it down/up by 1 from anywhere in the app.
 - **Division** — sets how many MIDI clock ticks equal one MuRF step, sent
   as CC9. Sixteen selectable hardware divisions are exposed through the
   banks described later in this manual. Note that the Main tab's Rate
@@ -143,8 +147,9 @@ the MuRF at a different pattern.
 
 | Key | What it does |
 |-----|----------------|
-| Backtick | Move to the next page (Main → Pattern → Keyboard → Stack → Clips → Playlist → Log → back to Main) |
+| Backtick | Move to the next page (Main → Pattern → Keyboard → Stack → Clips → Playlist → Sequencer → Log → MIDI → back to Main) |
 | Shift+Backtick | Move to the previous page in that same order |
+| Cmd+Tab / Cmd+Shift+Tab | Same next/previous page cycle as Backtick, as an alternate binding |
 | Tab | Move focus to the next control on the current page |
 | Shift+Tab | Move focus to the previous control |
 | Option+Tab | Jump focus to the next labeled section on the page |
@@ -413,6 +418,17 @@ any band's actual data.
 | ; / ' | Jump the caret back or forward 8 steps at a time |
 | - / = | Zoom the grid view out or in |
 | Escape or U | Collapse the current selection down to just the caret |
+
+### Follow
+
+Shift+F (or the Follow button) toggles the grid between showing your edit
+caret/selection and showing a live playhead instead: while Follow is on,
+the grid highlights the step the pattern is actually on as the clock runs,
+tracking the app's own tick counter the same way the rest of the clock
+display does (so it's reading the app's best guess, not a live readout from
+the hardware — see the note at the top of this manual). Turning Follow off
+returns the grid to showing your caret and selection as normal, picking up
+editing right where you left off.
 
 ### Whole-pattern vs. selection-scoped operations
 
@@ -723,6 +739,29 @@ currently set, it also re-parks the MuRF on the chain's first row with a
 Program Change before halting, so the next Play/Continue already starts
 on the right pattern.
 
+### Saving a whole list
+
+The **Lists** toolbar at the top of the Playlist page lets you name and
+save the pattern list and clip list together as one named preset,
+independent of the pattern/clip libraries those rows point at:
+
+- **Save list** (Cmd+S) — prompts for a name and stores the current row
+  counts, row contents, and Loop/Once/Once+Halt settings for both lists.
+- **Load list** (Cmd+O) — loads a saved list back onto the page. This does
+  not dump or re-run anything on its own — press Set Chain (or Dump) again
+  afterward if you want the hardware to reflect it.
+- **Delete list** (Cmd+X) — deletes the selected saved list, after
+  confirming.
+- **Delete all from library** — clears every saved list, after confirming.
+- **Export list / Import list** — saves or loads one named list as a
+  standalone `.json` file, for moving a list to another machine or sharing
+  it outside of a full project save.
+
+Saved lists live in your browser's local storage, the same as the pattern
+library, and your whole list library is also bundled into Save Project —
+so either a project file or an exported list file can move your saved
+lists to another machine.
+
 ### Loop / Once / Once + Halt
 
 Each list has its own independent ending behavior:
@@ -742,6 +781,119 @@ The pattern-row highlight tracks the pattern list; the clip-row highlight
 tracks the clip list independently — they are allowed to be sitting on
 different row numbers at the same time. The header's Blue meter tracks the
 pattern list's overall progress, and the Mint meter tracks the clip list's.
+
+---
+
+## Sequencer
+
+An 8-band × up-to-64-step grid for programming Trigger, Sustain, and Mute
+note data ahead of time instead of playing it live on Keyboard/Stack, plus
+CC automation lanes for the Main tab's continuous controls. It runs on the
+same shared app clock as everything else, so it can play alongside the
+Playlist, or you can just press its own Play/Stop.
+
+**The grid uses the same note vocabulary as Keyboard/Stack** — Trigger,
+Sustain, and Mute each send the same per-band MIDI notes those pages use
+(see the MIDI reference table below), plus the shared Step row (Note 108).
+Programming a band in the Sequencer and playing it by hand on Keyboard are
+two ways of sending the exact same messages, not two different systems.
+
+**Important — this is not saved with your project yet.** Unlike the
+Pattern grid, the Playlist, and your clip/pattern libraries, whatever
+you build in the Sequencer grid lives only in memory: it is not written
+into Save Project's JSON file and does not survive a page reload. If you
+want to keep something you built here, arm Rec (below) and play it once —
+the resulting clip *does* save and load normally, the same as any other
+recorded take.
+
+### Views and placement
+
+- **View: Trigger/Sustain** — click a step to place a Trigger (a short,
+  fixed ~30ms pulse). Switch Place to **Sustain**, click a start step, then
+  shift-click an end step in the same band to draw a held block instead.
+  Clicking an existing Trigger or Sustain block removes it. A band can't
+  hold a Trigger and a Sustain block on the same step — placing one where
+  the other already sits is blocked with a status message.
+- **View: Mute** — the Place toggle hides itself here, since Mute only has
+  one placement shape: click a start step, then shift-click an end step to
+  draw a Mute block, the same click-drag-shift gesture as a Sustain block.
+  Mute is intentionally independent of Trigger/Sustain — it never blocks or
+  gets blocked by them, since it's meant to ride on top of an
+  already-playing pattern rather than take a band over the way Trigger and
+  Sustain do.
+- **Step row** — one shared row at the bottom of the grid, independent of
+  the 8 bands, for placing the pattern's own Step pulse (Note 108) on the
+  timeline.
+- **Option+click** an existing Sustain or Mute block to focus it (shown
+  with a highlighted outline) without removing it, then **Option+Left /
+  Option+Right** grows or shrinks that block by one grid step from
+  whichever end doesn't collide with something else on the same band.
+  Shrinking stops at a one-step minimum; growing into another block or a
+  Trigger pulse is blocked the same way initial placement is.
+
+| Action | Mouse/key |
+|--------|-----------|
+| Place a Trigger, or draw a Sustain/Mute block | Click a start step, shift-click an end step for a block |
+| Remove a Trigger or an existing block | Click it |
+| Focus a block for resizing | Option+click it |
+| Resize the focused block | Option+Left / Option+Right |
+| Type an exact CC lane value | Shift-click a lane cell |
+
+### Division and Snap
+
+The **Division** dropdown sets how many grid columns make up a step, from
+64th-note triplet up through a whole note (straight/dotted/triplet for each
+of 7 base note values), plus a **Free (1 tick)** option for raw MIDI-tick
+placement. **Snap** (on by default) forces every click to land on the
+selected division's grid; turning it off places at 1-tick resolution
+regardless of which division is selected, without needing to switch the
+dropdown to Free and back.
+
+Everything you've already placed is stored by its actual tick position, not
+by which column it happened to be under — so changing Division or toggling
+Snap only changes the grid's resolution going forward, it never shifts
+content you already placed.
+
+### CC lanes
+
+**+ CC Lane** adds a row below the 8 bands for sequencing one of the Main
+tab's continuous controls (Drive, Output, Mix, Envelope, Envelope Scale, or
+any of the 8 Filter Levels) directly on the timeline. Each lane has its own
+target-control dropdown. A plain click on a lane cell sets a default value
+at that tick; shift-click prompts you to type an exact 0–127 value, and a
+blank entry clears that point. A lane only sends something on ticks where
+you've actually placed a point — there's no drawn ramp/curve between points,
+just sparse per-tick values, by design.
+
+### Transport and recording
+
+**Play** starts the shared app clock if it isn't already running (same as
+pressing Play anywhere else) and begins reading the grid; **Stop** halts
+just the Sequencer's own output and releases any currently-held Sustain or
+Mute notes cleanly. **Rec**, next to Play/Stop, arms or punches out the
+exact same clip recorder the header's Rec button and Backslash shortcut
+use — arm it, then press Play, and the Sequencer's own Trigger/Sustain/
+Mute notes and CC lane sends get captured into a take through the normal
+recording pipeline, exactly as if you'd played them by hand. Punch out
+(press Rec again, or Backslash) to finalize it, then save it like any
+other clip on the Clips page.
+
+Stopping the clock from anywhere else in the app (Stop Clock, Pause All,
+Reset All, Reset Lists) also stops the Sequencer and releases any held
+notes — you don't need to remember to press the Sequencer's own Stop
+first. This matters in particular for Set Chain: a SysEx pattern dump
+physically transmitting over MIDI can't tolerate anything else landing in
+the middle of it without risking the MuRF's receiver outright (see the MIDI
+safety section above) — the Sequencer automatically holds off sending
+anything for the short window a dump is in flight, so it's safe to leave
+running, but if you're not actively using it during a chain, pressing Stop
+on it first is still the simplest way to keep the two features from
+overlapping at all.
+
+### Clear All
+
+Wipes every band's Trigger/Sustain/Mute content, the Step row, and every CC
+lane's points — the lanes themselves stay, just emptied.
 
 ---
 
@@ -765,6 +917,60 @@ messages per second.
 **Copy** copies every visible entry, timestamp and all, to your clipboard
 as plain text — handy for pasting a session's worth of activity somewhere
 else for review. **Clear** empties the log.
+
+---
+
+## MIDI
+
+This page is for connecting an external MIDI controller (a Twister-style
+knob box, a pad controller, a keyboard) to the app itself — separate from
+the MuRF output connection in the header, and separate from the header's
+digit-key **Map** mode described below, which binds digits 1–0 to buttons
+for your own use, not an external device.
+
+**Map External** (header button, active on every tab) is how you actually
+learn a mapping: click it, then click any slider or button in the app, then
+move a knob or press a button on your controller. That one input is now
+bound to that one app control. Click Map External again to leave learn
+mode.
+
+- A **slider** mapping learns in absolute mode by default (the controller's
+  position maps directly to the slider's value) and immediately shows a
+  small toast letting you switch it to **relative** mode instead, with a
+  configurable step size — useful for an endless encoder that doesn't have
+  a fixed physical position to match against the app's current value.
+- A **toggle button** mapping fires on/off based on whether the incoming
+  value is above or below 64.
+- A **plain action button** mapping (Send, Set Chain, Play, etc.) fires
+  once per press — specifically on the rising edge of the incoming value,
+  so a Twister-style button in momentary/Hold mode works correctly and a
+  Toggle-mode button only fires on the press that turns it on, not the one
+  that turns it off.
+
+**Input ports** — checking **Track** on a port is the only thing you need
+for mapping to work from it; it also passes that port's Mute/Trigger/
+Sustain notes straight through to the Keyboard/Stack engine automatically,
+using the app's fixed note ranges, with no separate per-note learn step —
+a QuNexus-style controller preset in the right octaves just works. **Sync**
+and **Remote** (input) are reserved for later clock-follow / two-way
+control-surface work and don't do anything yet.
+
+**Output ports** — **Track** is the port the app actually sends
+patterns/CC/Program Change/clock to; it's the same checkbox as the port
+picker in the header; they stay in sync with each other. **Remote**
+(output) opts that port in to receive LED-ring/button-color feedback for
+anything mapped via Map External — a controller's input and output ports
+need to share the same port name (as a Twister-style controller's do) for
+feedback to find its way back to the right device. **Sync** (output)
+currently just follows Track.
+
+**External mappings** lists every learned mapping, with a clear button per
+row, and the absolute/relative/step controls for continuous mappings.
+Mappings and port roles are saved with your project (Save/Open Project in
+the header) automatically. Independent of that, you can also save, load,
+delete, export, and import a whole mapping set as a standalone named
+preset right on this page — handy for moving one controller's layout
+between projects or machines without a full project file.
 
 ---
 
@@ -827,14 +1033,23 @@ Cmd+S to save it, then Play Clip to hear it back.
 For a Playlist run: set your row counts, fill them in, Set Chain, then
 Play. Option+X rewinds both lists without needing to re-dump.
 
+On the Sequencer page: click steps to place Triggers, flip Place to
+Sustain and shift-click to draw a held block, then press its own Play.
+Arm its Rec button first if you want to keep what you build as a clip —
+the grid itself isn't saved with your project yet.
+
 Save your project whenever the take is worth keeping.
 
 ---
 
 ## Not in this build
 
-MIDI input / external controller mapping, Ableton Link, receiving clock
-from another device, an overdub-style recording UI, recording the pattern
-grid directly into a clip, and a true mute-all row (the EQ row types still
-pass audio through). Several of these are on the roadmap — see
-`ROADMAP.md` in this repository for what's currently planned.
+Ableton Link, receiving clock from another device, gamepad mapping, an
+overdub-style recording UI, recording the Pattern tab's grid directly into
+a clip, drawn CC automation curves in the Sequencer (its lanes are sparse
+per-tick values only, not ramps), saving the Sequencer's own grid content
+with your project (see the Sequencer section above — record it as a clip
+instead if you want to keep it), and a true mute-all Playlist row type
+(the EQ row types still pass audio through). Several of these are on the
+roadmap — see `ROADMAP.md` in this repository for what's currently
+planned.

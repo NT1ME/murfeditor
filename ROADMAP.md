@@ -5,7 +5,10 @@ Not in strict priority order except where noted.
 
 ## Near-term (this week)
 
-- **Keyboard shortcuts for the Playlist/Chain tab.** None mapped yet.
+- **Keyboard shortcuts for the Playlist/Chain tab.** Still none for the
+  actual Chain actions (Set Chain, Dump, row navigation) - the only
+  shortcuts on this tab are the generic Cmd+S/Cmd+O/Cmd+X reused for
+  saving/loading/deleting a named list preset.
 - **Regression test: clips + chain together.** Confirm a clip chain can still
   play correctly on top of / alongside a running pattern chain - hasn't been
   tested since the Chain rework this session.
@@ -17,20 +20,27 @@ Not in strict priority order except where noted.
 
 ## Bigger features
 
-- **Note Sequencer tab.** Per-band, per-step sequencing of MIDI note
-  performance data (mirroring the Pattern tab's grid layout), up to 64
-  steps to match the longest pattern length. Each step chooses between:
-  Trigger, Sustain, Mute, or (pattern) Step. Mute is optional per step -
-  not needed for a pure trigger/sustain sequence, but available for
-  sequencing mutes on top of or between patterns instead of playing them
-  by hand. Recording the sequencer's playback produces a clip, which can
-  then be chained like any other clip.
-  - Constraint to design around: a chain row can't have empty
-    trigger/sustain/step data while a pattern is actively playing -
-    during pattern playback, only Mute and CC clips can run concurrently.
-- **MIDI CC sequencing.** Alongside note data, make the CC parameters on
-  the main page sequenceable the same way (per-step values), not just
-  playable live.
+- ~~**Note Sequencer tab.**~~ Done. New **Sequencer** tab: an 8-band ×
+  up-to-64-step grid, independent of the Pattern tab, for Trigger, Sustain,
+  Mute, and the shared Step pulse, plus CC automation lanes (folding in
+  the "MIDI CC sequencing" item below - same feature). Content is stored
+  by absolute MIDI tick rather than by step index, so changing the
+  Division/zoom setting never retroactively moves anything already
+  placed. Option+click focuses a Sustain/Mute block for non-destructive
+  Option+Left/Right resizing. A Rec button arms/punches the same clip
+  recorder the rest of the app uses, so a Sequencer run can be captured
+  and chained like any other clip. Runs on the same shared clock as
+  Playlist; a fix after this landed closes the one real conflict found so
+  far - the Sequencer now also stops on any global Stop (it used to keep
+  ticking silently in the background) and holds off sending during an
+  in-flight SysEx dump, so it can't land a note/CC in the middle of a
+  Set Chain dump and wedge the MuRF's MIDI receiver the way the original
+  Halt-state failure mode (see the README's safety section) did.
+  Not yet saved with the project - see the README's Sequencer section.
+  Deferred from the original design: the "chain row can't have empty
+  trigger/sustain/step data while a pattern is actively playing" Playlist
+  constraint was never built, since the Sequencer ended up as its own
+  independent tab rather than feeding the Playlist's row types directly.
 - ~~**External MIDI controller mapping.**~~ Done. "Map External" (header)
   learns any connected MIDI controller's CC/notes into app sliders and
   buttons, independent of the existing digit-key Map mode and active on
