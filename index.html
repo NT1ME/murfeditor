@@ -257,6 +257,7 @@
     }
     body.show-hints .hint-cap { display: block; }
     .clock-stack { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; }
+    .ext-clock-badge { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 5px; border-radius: 4px; background: #4ec9ff; color: #04202b; align-self: center; }
     .hdr-meter {
       display: flex;
       align-items: center;
@@ -919,6 +920,7 @@
             <button id="btnRecord" title="\">Rec</button>
             <button id="btnPlayClip" title="Play clip / ⌘⇧Enter" data-kbd="⌘⇧↵">Play clip</button>
             <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
+            <span id="extClockBadge" class="ext-clock-badge" title="Clock source: External - following MIDI Clock from a Sync-enabled input port" hidden>EXT</span>
             <span class="clock-stack">
               <select id="divSelect" title="Clock division (CC9)"></select>
               <span class="hint-cap">⌘, and ⌘. walk the full list</span>
@@ -1370,7 +1372,7 @@
         <div class="row" style="gap:12px; align-items:flex-start; flex-wrap:wrap">
           <div class="panel" style="flex:1; min-width:280px">
             <h2>Input ports</h2>
-            <p class="hint" style="margin-top:-6px">Track enables everything for this port: Mute/Trigger/Sustain notes pass straight through to Keyboard/Stack automatically, and its CC/notes become learnable via "Map External" in the header (click it, then click a slider or button to bind it). Sync and Remote are reserved for future clock-follow and two-way control-surface use (see Roadmap).</p>
+            <p class="hint" style="margin-top:-6px">Track enables everything for this port: Mute/Trigger/Sustain notes pass straight through to Keyboard/Stack automatically, and its CC/notes become learnable via "Map External" in the header (click it, then click a slider or button to bind it). Sync follows this port's MIDI Clock/Start/Continue/Stop as the app's own clock instead of its internal timer - check it once an external device's clock reaches this port. Remote is reserved for future two-way control-surface use (see Roadmap).</p>
             <div id="midiInputPorts" class="midi-port-list"></div>
           </div>
           <div class="panel" style="flex:1; min-width:280px">
@@ -1459,7 +1461,13 @@
         take: [], clip: null, clips: {},
         bank: 0, customDivs: [0, 1, 2, 4, 7, 10, 13, 15, 17, 19],
         clipMode: 'loop', clipBars: 0,
-        seqStep: 0, halted: false
+        seqStep: 0, halted: false,
+        // 'internal' = the app's own rAF-driven free-running timer (default);
+        // 'external' = follow MIDI Clock/Start/Continue/Stop from whichever
+        // input port(s) have the Sync role checked on the MIDI tab, instead
+        // of running the internal timer at all - see setClockSource().
+        source: 'internal',
+        extTickTimes: [], extLastTickAt: 0, extStalled: false, extWatchdog: null
       },
       pattern: {
         slot: 12,          // 1-24
@@ -1923,8 +1931,16 @@
       for (const input of state.midiAccess.inputs.values()) {
         if (attachedInputIds.has(input.id)) continue;
         attachedInputIds.add(input.id);
-        input.onmidimessage = (e) => onExternalMidiMessage(input.id, input.name, e);
+        input.onmidimessage = (e) => {
+          onExternalMidiMessage(input.id, input.name, e);
+          onExternalClockMessage(input.id, e);
+        };
       }
+      // Restored from a previous session (or a loaded project) with Sync
+      // already checked on some port - pick that back up now that ports
+      // are actually enumerated, rather than waiting on a checkbox click.
+      const anySync = Object.values(state.midiInputRoles).some(r => r && r.sync);
+      setClockSource(anySync ? 'external' : 'internal');
     }
 
     const MAP_EXTERNAL_EXCLUDED_IDS = new Set(['btnMapMode', 'btnMapExternal', 'btnHelpHints', 'raAbsBtn', 'raRelBtn', 'raCloseBtn']);
@@ -2217,6 +2233,98 @@
       applyRemoteMapping(m, value);
     }
 
+    // ---------- External Clock Sync (Sync role, MIDI tab) ----------
+    // System Realtime bytes (Clock/Start/Continue/Stop) are a single byte
+    // with no channel nibble at all, unlike Note/CC - there's no such thing
+    // as "the clock on channel N" to filter by. Filtering instead happens
+    // by message type (checked below) and by which input port(s) have Sync
+    // checked, same as Track governs Note/CC passthrough for Map External.
+    function setClockSource(src) {
+      const c = state.clock;
+      const was = c.source;
+      c.source = src;
+      const box = document.getElementById('bpmBox');
+      if (box) box.disabled = (src === 'external');
+      const badge = document.getElementById('extClockBadge');
+      if (badge) badge.hidden = (src !== 'external');
+      if (src === 'external') {
+        c.extTickTimes = [];
+        c.extStalled = false;
+        startExtClockWatchdog();
+        if (was !== 'external') setStatus('Clock source: External (following MIDI In)');
+      } else {
+        stopExtClockWatchdog();
+        if (c.running) {
+          // Resume the internal timer from wherever the tick count
+          // currently sits - no MIDI side effects, this is just a local
+          // mode switch, not a Continue.
+          const tickMs = 60000 / Math.max(20, c.bpm || 120) / 24;
+          c.origin = performance.now() - (c.tick || 0) * tickMs;
+          c.f8Sent = c.tick || 0;
+          startTimer();
+        }
+        if (was === 'external') setStatus('Clock source: Internal');
+      }
+    }
+    function startExtClockWatchdog() {
+      stopExtClockWatchdog();
+      state.clock.extWatchdog = setInterval(() => {
+        const c = state.clock;
+        if (!c.running || c.source !== 'external') return;
+        if (!c.extStalled && performance.now() - (c.extLastTickAt || 0) > 600) {
+          c.extStalled = true;
+          setStatus('External clock stalled - no MIDI Clock received from the synced port');
+        }
+      }, 200);
+    }
+    function stopExtClockWatchdog() {
+      if (state.clock.extWatchdog) { clearInterval(state.clock.extWatchdog); state.clock.extWatchdog = null; }
+    }
+    function onExternalClockMessage(portId, e) {
+      const roles = state.midiInputRoles[portId];
+      if (!roles || !roles.sync) return;
+      const data = e.data;
+      if (!data || data.length !== 1) return; // Realtime bytes only - never Note/CC/PC/SysEx
+      const status = data[0];
+      const c = state.clock;
+      if (status === 0xF8) {
+        const now = performance.now();
+        c.extLastTickAt = now;
+        if (c.extStalled) { c.extStalled = false; setStatus('External clock resumed'); }
+        // Rolling average for display only - the actual per-tick timing
+        // below re-anchors origin from this tick's real arrival time, so
+        // it stays correct even if this estimate is briefly off.
+        c.extTickTimes.push(now);
+        if (c.extTickTimes.length > 24) c.extTickTimes.shift();
+        if (c.extTickTimes.length >= 2) {
+          const span = c.extTickTimes[c.extTickTimes.length - 1] - c.extTickTimes[0];
+          const avgTickMs = span / (c.extTickTimes.length - 1);
+          if (avgTickMs > 0) {
+            c.bpm = Math.max(20, Math.min(300, Math.round(60000 / (avgTickMs * 24))));
+            const box = document.getElementById('bpmBox');
+            if (box && document.activeElement !== box) box.value = c.bpm;
+          }
+        }
+        if (!c.running) return;
+        c.tick++;
+        const tickMs = 60000 / Math.max(20, c.bpm || 120) / 24;
+        c.origin = now - c.tick * tickMs;
+        clockTick();
+      } else if (status === 0xFA) {
+        clockPlay(true, { skipArm: true });
+        // Same tick-0 compensation seqPlay() does for a fresh internal
+        // Start: clockPlay(true) resets tick to 0, but nothing else here
+        // ever passes tick 0 itself to clockTick() - each later tick only
+        // increments and fires for the NEW value. Safe to call once right
+        // here specifically because we just reset tick to 0 ourselves.
+        clockTick();
+      } else if (status === 0xFB) {
+        clockPlay(false, { skipArm: true });
+      } else if (status === 0xFC) {
+        clockStopDevice();
+      }
+    }
+
     function renderMidiTab() {
       if (!state.midiAccess) {
         const msg = '<div class="midi-port-empty">MIDI not available yet — Web MIDI failed, was denied, or hasn\'t finished asking permission. Try Refresh in the header MIDI cluster.</div>';
@@ -2237,12 +2345,19 @@
           row.innerHTML =
             '<span class="midi-port-name">' + inp.name + '</span>' +
             '<label class="midi-role-chk" title="Enables this port for Map External - Mute/Trigger/Sustain notes pass straight through to Keyboard/Stack, and its CC/notes become learnable"><input type="checkbox" data-role="track"' + (roles.track ? ' checked' : '') + '> Track</label>' +
-            '<label class="midi-role-chk" title="Reserved for future external clock follow - see Roadmap"><input type="checkbox" disabled> Sync</label>' +
+            '<label class="midi-role-chk" title="Follow this port\'s incoming MIDI Clock/Start/Continue/Stop as the app\'s own clock source, instead of its internal free-running timer"><input type="checkbox" data-role="sync"' + (roles.sync ? ' checked' : '') + '> Sync</label>' +
             '<label class="midi-role-chk" title="Not required for mapping - mapping and note passthrough are controlled by Track. Reserved for future two-way control-surface use"><input type="checkbox" disabled> Remote</label>';
           row.querySelector('[data-role="track"]').addEventListener('change', (ev) => {
             roles.track = ev.target.checked;
             saveMidiRoles();
             setStatus((roles.track ? 'Listening to ' : 'Stopped listening to ') + inp.name + ' for external mappings');
+          });
+          row.querySelector('[data-role="sync"]').addEventListener('change', (ev) => {
+            roles.sync = ev.target.checked;
+            saveMidiRoles();
+            const anySync = Object.values(state.midiInputRoles).some(r => r && r.sync);
+            setClockSource(anySync ? 'external' : 'internal');
+            setStatus((roles.sync ? 'Following external clock from ' : 'Stopped following ') + inp.name);
           });
           inWrap.appendChild(row);
         }
@@ -4882,6 +4997,12 @@
     function startTimer() {
       stopTimer();
       const c = state.clock;
+      // Externally clocked: ticks are driven one at a time by incoming
+      // MIDI Clock bytes (see onExternalClockMessage), not by a local
+      // timer - and nothing should be sent to the MuRF off of this timer
+      // either, since clock/rate for it is coming from Tap/Step or Rate CV
+      // instead of MIDI in that setup.
+      if (c.source === 'external') return;
       if (c.origin == null) {
         c.origin = performance.now();
         c.f8Sent = c.tick || 0;
@@ -4922,9 +5043,14 @@
       if (state.clock.timer) { clearInterval(state.clock.timer); state.clock.timer = null; }
       if (state.clock.raf) { cancelAnimationFrame(state.clock.raf); state.clock.raf = null; }
     }
-    function clockPlay(fromStart) {
+    function clockPlay(fromStart, opts) {
       const c = state.clock;
-      armClockOn();
+      // skipArm: used when Start/Continue arrives from an external clock
+      // we're following - that source is explicitly not MIDI Clock Sync
+      // (CC89 stays off so the MuRF's own Tap/Step/Rate-CV clocking is
+      // undisturbed), so this must not auto-arm it the way a manual
+      // Play/Continue press does.
+      if (!(opts && opts.skipArm)) armClockOn();
       c.running = true;
       if (fromStart) {
         c.tick = 0;
@@ -5189,6 +5315,8 @@
           if (p.remoteMappings || p.midiInputRoles || p.midiOutputRoles) {
             saveRemoteMappings();
             saveMidiRoles();
+            const anySync = Object.values(state.midiInputRoles).some(r => r && r.sync);
+            setClockSource(anySync ? 'external' : 'internal');
             if (isMidiTabActive()) renderMidiTab();
           }
         } catch (e) { errs.push('midi mappings'); }

@@ -76,6 +76,25 @@ Not in strict priority order except where noted.
     gamepad, not just parameter mapping.
 - **Clock output to multiple destinations.** Send MIDI clock to more than
   one place at once.
+- **External Clock Sync (follow an external MIDI clock).** Built, headless
+  dry-run only so far - NOT yet verified against real hardware, and
+  deliberately not merged to main until it is. Check Sync on an input port
+  (MIDI tab) to make the app follow that port's MIDI Clock/Start/Continue/
+  Stop instead of running its own free-running timer: `onExternalClockMessage`
+  re-anchors `state.clock.origin/tick/bpm` from each incoming 0xF8 so every
+  existing tick-consumer (Sequencer, Playlist/Chain) works unchanged
+  regardless of where ticks come from; `clockPlay()` gained a `skipArm`
+  option so an external Start/Continue never arms MIDI Clock Sync (CC89) on
+  the MuRF itself - that stays under the user's own control, since the
+  motivating setup (MuRF clocked via its Tap/Step input from a modular/CV
+  rig, VC only following tempo for its own Sequencer/Playlist timing) needs
+  CC89 to stay off. Includes a stall watchdog (flags it if ticks stop
+  arriving while still "running") and a visible EXT badge + disabled BPM
+  box while active. System Realtime bytes carry no channel nibble, so
+  there's no such thing as channel-filtering the clock itself - isolation
+  from a port carrying other traffic comes from listening only for
+  Clock/Start/Continue/Stop byte values, and from which Push output port
+  has Track left off, not from a channel number.
 
 ## Longer-term / ongoing
 
