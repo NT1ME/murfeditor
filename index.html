@@ -5401,6 +5401,14 @@
           if (typeof renderPlaylist === 'function') renderPlaylist();
         } catch (e) { errs.push('playlist'); }
         state.clock.running = false; state.clock.recording = false; state.clock.recArm = false; state.clock.armed = false;
+        // relayToOutput arms CC89 and the Relay button's visible "on" state
+        // together (setExtRelayToOutput) - armed is being force-cleared
+        // directly above, same as this whole block already does rather
+        // than sending a live CC89 message mid-load, so relayToOutput and
+        // the button need the same direct reset or they'd be left showing
+        // "on" for something that's actually off.
+        state.clock.relayToOutput = false;
+        document.getElementById('btnExtRelay')?.classList.remove('on');
         if (state.playlist) {
           state.playlist.running = false;
           state.playlist.clipRunning = false;
