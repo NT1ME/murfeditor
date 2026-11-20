@@ -258,6 +258,7 @@
     body.show-hints .hint-cap { display: block; }
     .clock-stack { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; }
     .ext-clock-badge { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; padding: 2px 5px; border-radius: 4px; background: #4ec9ff; color: #04202b; align-self: center; }
+    #btnExtRelay.on { background: #ff9a4e; color: #2b1304; }
     .hdr-meter {
       display: flex;
       align-items: center;
@@ -921,6 +922,7 @@
             <button id="btnPlayClip" title="Play clip / ⌘⇧Enter" data-kbd="⌘⇧↵">Play clip</button>
             <label class="clock-mini">BPM <input id="bpmBox" type="number" min="20" max="300" value="120" style="width:52px"></label>
             <span id="extClockBadge" class="ext-clock-badge" title="Clock source: External - following MIDI Clock from a Sync-enabled input port" hidden>EXT</span>
+            <button type="button" id="btnExtRelay" class="ext-clock-relay" title="Also arm MIDI Clock Sync (CC89) on the MuRF and forward this clock to it - for a setup where the MuRF's own pattern clock needs to be genuinely MIDI-synced, not clocked some other way (e.g. Tap/Step)" hidden>Relay → MuRF</button>
             <span class="clock-stack">
               <select id="divSelect" title="Clock division (CC9)"></select>
               <span class="hint-cap">⌘, and ⌘. walk the full list</span>
@@ -1467,7 +1469,17 @@
         // input port(s) have the Sync role checked on the MIDI tab, instead
         // of running the internal timer at all - see setClockSource().
         source: 'internal',
-        extTickTimes: [], extLastTickAt: 0, extStalled: false, extWatchdog: null
+        extTickTimes: [], extLastTickAt: 0, extStalled: false, extWatchdog: null,
+        // Only meaningful while source==='external': also arm MIDI Clock
+        // Sync (CC89) on the MuRF and forward each incoming tick onward to
+        // it, for a setup where the MuRF's own Animation clock needs to be
+        // genuinely MIDI-synced (Division/CC9 only mean anything as a
+        // clock divider while the MuRF is actually clock-synced) rather
+        // than clocked externally via Tap/Step. Off by default - the
+        // original external-clock-sync behavior (VC follows Push for its
+        // own Sequencer/Playlist timing, MuRF stays untouched) still
+        // applies unless this is explicitly turned on.
+        relayToOutput: false
       },
       pattern: {
         slot: 12,          // 1-24
@@ -2247,6 +2259,8 @@
       if (box) box.disabled = (src === 'external');
       const badge = document.getElementById('extClockBadge');
       if (badge) badge.hidden = (src !== 'external');
+      const relayBtn = document.getElementById('btnExtRelay');
+      if (relayBtn) relayBtn.hidden = (src !== 'external');
       if (src === 'external') {
         c.extTickTimes = [];
         c.extStalled = false;
@@ -2254,6 +2268,7 @@
         if (was !== 'external') setStatus('Clock source: External (following MIDI In)');
       } else {
         stopExtClockWatchdog();
+        if (c.relayToOutput) setExtRelayToOutput(false);
         if (c.running) {
           // Resume the internal timer from wherever the tick count
           // currently sits - no MIDI side effects, this is just a local
@@ -2310,8 +2325,15 @@
         const tickMs = 60000 / Math.max(20, c.bpm || 120) / 24;
         c.origin = now - c.tick * tickMs;
         clockTick();
+        // Forward this same tick to the MuRF too, only when explicitly
+        // told to - needed for a setup where the MuRF's own Animation
+        // clock has to be genuinely MIDI-synced (Division/CC9 only work
+        // as a clock divider while it is), as opposed to the default
+        // external-clock-sync behavior where the MuRF is clocked some
+        // other way (e.g. Tap/Step) and never touched from here.
+        if (c.relayToOutput) sendClockAt(now);
       } else if (status === 0xFA) {
-        clockPlay(true, { skipArm: true });
+        clockPlay(true, { skipArm: !c.relayToOutput });
         // Same tick-0 compensation seqPlay() does for a fresh internal
         // Start: clockPlay(true) resets tick to 0, but nothing else here
         // ever passes tick 0 itself to clockTick() - each later tick only
@@ -2319,9 +2341,26 @@
         // here specifically because we just reset tick to 0 ourselves.
         clockTick();
       } else if (status === 0xFB) {
-        clockPlay(false, { skipArm: true });
+        clockPlay(false, { skipArm: !c.relayToOutput });
       } else if (status === 0xFC) {
         clockStopDevice();
+      }
+    }
+    function setExtRelayToOutput(on) {
+      const c = state.clock;
+      c.relayToOutput = !!on;
+      const btn = document.getElementById('btnExtRelay');
+      if (btn) btn.classList.toggle('on', c.relayToOutput);
+      if (c.relayToOutput) {
+        armClockOn();
+        setStatus('Relaying external clock to the MuRF - Clock Sync armed');
+      } else {
+        // Symmetric with arming it on: don't leave the MuRF's own Clock
+        // Sync believing a clock is still coming if this is what was
+        // feeding it - otherwise its pattern just silently stalls waiting
+        // on ticks that stop arriving.
+        setClockArmed(false);
+        setStatus('Stopped relaying clock to the MuRF');
       }
     }
 
@@ -4992,6 +5031,13 @@
     }
     function sendClockAt(when) {
       if (!state.clock.running || !state.clock.armed) return;
+      // startTimer()'s internal loop already never reaches this call while
+      // a SysEx dump is in flight (it resyncs f8Sent instead) - this check
+      // is the one that actually matters for the externally-relayed clock
+      // path (onExternalClockMessage), which calls straight in per real
+      // tick with no equivalent of its own. Same risk either way: an F8
+      // landing mid-dump can corrupt it and wedge the MuRF's receiver.
+      if (performance.now() < (state.clock.sysexBusyUntil || 0)) return;
       if (state.output) { try { state.output.send([0xF8], when); } catch (e) {} }
     }
     function startTimer() {
@@ -5161,6 +5207,7 @@
         if (e.key === 'Enter') { e.preventDefault(); commitBpm(); bpmBox.blur(); }
       });
       document.getElementById('btnClockArm')?.addEventListener('click', () => toggleClockArm());
+      document.getElementById('btnExtRelay')?.addEventListener('click', () => setExtRelayToOutput(!state.clock.relayToOutput));
       document.getElementById('btnPlay')?.addEventListener('click', () => clockPlay(true));
       document.getElementById('btnContinue')?.addEventListener('click', () => clockPlay(false));
       document.getElementById('btnClockStop')?.addEventListener('click', clockStopDevice);

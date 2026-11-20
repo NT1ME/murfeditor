@@ -95,6 +95,18 @@ Not in strict priority order except where noted.
   from a port carrying other traffic comes from listening only for
   Clock/Start/Continue/Stop byte values, and from which Push output port
   has Track left off, not from a channel number.
+  Also added: a "Relay → MuRF" toggle (visible once Sync is armed) for the
+  other topology - the MuRF only has one MIDI input, so if it needs to stay
+  genuinely MIDI-Clock-synced (Division/CC9 only work as a clock divider
+  while it is) rather than clocked via Tap/Step, the same VC-to-MuRF cable
+  has to carry the relayed clock too, there's no splitting it in parallel.
+  Turning the toggle on arms CC89 and forwards each incoming external tick
+  onward via `sendClockAt()` (which now also checks `sysexBusyUntil`,
+  closing the same gap `seqOnTick()` got in the SysEx-interleaving fix, so
+  a relayed tick can't land mid-dump either); turning it off disarms CC89
+  symmetrically rather than leaving the MuRF believing a clock is still
+  coming. Double-hop latency (Push → VC → MuRF) is expected to be a few
+  constant, non-jittery ms - real-hardware confirmation still pending.
 
 ## Longer-term / ongoing
 
