@@ -96,6 +96,11 @@ want that, disconnect the MIDI port first, load the project, then reconnect.
 - **Beat LED** — pulses once per quarter note whenever the app's clock is
   running, whether or not the clock is actually armed to transmit ticks to
   the hardware.
+- **EXT / Relay → MuRF** — only visible while the app is following an
+  external clock (see "Following an external clock" in the MIDI section).
+  EXT means ticks are coming from another device, not the app's own timer;
+  the BPM box goes read-only and shows the tempo it's measuring. Relay →
+  MuRF arms Clock Sync (CC89) and forwards that clock on to the MuRF.
 
 **Meters** (all the same width, for a quick at-a-glance read):
 
@@ -952,8 +957,9 @@ for mapping to work from it; it also passes that port's Mute/Trigger/
 Sustain notes straight through to the Keyboard/Stack engine automatically,
 using the app's fixed note ranges, with no separate per-note learn step —
 a QuNexus-style controller preset in the right octaves just works. **Sync**
-and **Remote** (input) are reserved for later clock-follow / two-way
-control-surface work and don't do anything yet.
+(input) makes the app follow that port's MIDI clock — see below.
+**Remote** (input) is reserved for later two-way control-surface work and
+doesn't do anything yet.
 
 **Output ports** — **Track** is the port the app actually sends
 patterns/CC/Program Change/clock to; it's the same checkbox as the port
@@ -971,6 +977,46 @@ the header) automatically. Independent of that, you can also save, load,
 delete, export, and import a whole mapping set as a standalone named
 preset right on this page — handy for moving one controller's layout
 between projects or machines without a full project file.
+
+### Following an external clock
+
+Check **Sync** on the input port another device's MIDI clock arrives on
+(Push, Ableton, a drum machine) and the app stops running its own timer
+and ticks in time with that device instead. Its Start/Continue/Stop drive
+the app's transport too. The Sequencer and Playlist/Chain keep working
+exactly as before — they're just paced by the external clock now. Uncheck
+Sync to go back to the internal clock.
+
+On its own, Sync does **not** touch the MuRF. To have the MuRF's own
+pattern clock follow along too, turn on **Relay → MuRF** (it appears next
+to the BPM box once Sync is on): that arms Clock Sync (CC89) on the MuRF
+and forwards each tick to it, so Division still works as a clock divider.
+Turning Relay off un-arms CC89 again, so the MuRF isn't left waiting on a
+clock that stopped coming.
+
+If the clock stops arriving while the app thinks it's playing (cable
+pulled, the other device stopped without sending Stop), the status bar
+says so.
+
+Things worth knowing when you set this up:
+
+- **Every device should get clock from exactly one place.** If the app is
+  relaying clock to the MuRF, don't also have your DAW send clock straight
+  to the same port — the MuRF would get two clock streams at once. Let the
+  app do it: it's the only thing that knows when a SysEx pattern dump is
+  going out, and it holds clock back for that moment so a tick can't land
+  in the middle of a dump (see the MIDI safety section).
+- **MIDI clock has no channel.** Clock and Start/Stop/Continue go to
+  everything listening on that cable, whatever channel each device is set
+  to. Channels only separate notes, CC, and Program Change.
+- **Same computer as your DAW?** The DAW and the browser need a virtual
+  MIDI port between them (on macOS, enable the IAC Driver in Audio MIDI
+  Setup), with the DAW sending clock to it and Sync checked on it here.
+  Leave Track off on that port unless you actually want the DAW's notes
+  played into Keyboard/Stack.
+- **Song Position Pointer is ignored.** If your DAW starts playback from
+  the middle of a song, the app picks up from its own last position rather
+  than jumping to match. Starting from the top lines everything up.
 
 ---
 
@@ -1044,7 +1090,8 @@ Save your project whenever the take is worth keeping.
 
 ## Not in this build
 
-Ableton Link, receiving clock from another device, gamepad mapping, an
+Ableton Link, following Song Position Pointer from an external clock,
+gamepad mapping, an
 overdub-style recording UI, recording the Pattern tab's grid directly into
 a clip, drawn CC automation curves in the Sequencer (its lanes are sparse
 per-tick values only, not ramps), saving the Sequencer's own grid content
