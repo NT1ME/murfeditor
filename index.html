@@ -2335,11 +2335,11 @@
       } else if (status === 0xFA) {
         clockPlay(true, { skipArm: !c.relayToOutput });
         // Same tick-0 compensation seqPlay() does for a fresh internal
-        // Start: clockPlay(true) resets tick to 0, but nothing else here
-        // ever passes tick 0 itself to clockTick() - each later tick only
-        // increments and fires for the NEW value. Safe to call once right
-        // here specifically because we just reset tick to 0 ourselves.
-        clockTick();
+        // Start, and deliberately only that: tick 0 never reaches
+        // clockTick() on either clock path, and the Playlist/clips/playhead
+        // are timed around that (their first tick is tick 1), so only the
+        // Sequencer - which places content at tick 0 - gets it here too.
+        if (typeof seqOnTick === 'function') seqOnTick();
       } else if (status === 0xFB) {
         clockPlay(false, { skipArm: !c.relayToOutput });
       } else if (status === 0xFC) {
